@@ -1,0 +1,207 @@
+/* ============================================
+   ESTILOS COMUNS DO SIDEBAR - ADMIN
+   =========================================== */
+
+:root {
+  --primary-blue: #1e3c72;
+  --secondary-blue: #2a5298;
+  --accent-blue: #3a6ab5;
+  --light-blue: #e6f0fa;
+  --sidebar-width: 280px;
+}
+
+/* ── Sidebar Global ─────────────────────────── */
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  width: var(--sidebar-width);
+  background: linear-gradient(
+    135deg,
+    var(--primary-blue),
+    var(--secondary-blue)
+  );
+  color: white;
+  transition: all 0.3s ease;
+  z-index: 1000;
+  overflow-y: auto;
+  box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+}
+
+.sidebar.hidden {
+  transform: translateX(-100%);
+  box-shadow: none;
+}
+
+.sidebar-header {
+  padding: 20px;
+  text-align: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sidebar-header .logo {
+  width: 60px;
+  height: 60px;
+  background: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 15px;
+  color: var(--primary-blue);
+  font-size: 2rem;
+}
+
+.sidebar-header h3 {
+  font-size: 1.2rem;
+  margin-bottom: 5px;
+}
+.sidebar-header p {
+  font-size: 0.85rem;
+  opacity: 0.8;
+  margin-bottom: 0;
+}
+
+.sidebar-menu {
+  padding: 20px 0;
+}
+
+.sidebar-menu .menu-title {
+  padding: 10px 20px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  opacity: 0.6;
+}
+
+.sidebar-menu .menu-item {
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  color: white;
+  text-decoration: none;
+  transition: all 0.3s;
+  margin: 5px 10px;
+  border-radius: 10px;
+}
+
+.sidebar-menu .menu-item:hover,
+.sidebar-menu .menu-item.active {
+  background: rgba(255, 255, 255, 0.2);
+  transform: translateX(5px);
+}
+
+.sidebar-menu .menu-item i {
+  width: 30px;
+  font-size: 1.2rem;
+}
+.sidebar-menu .menu-item span {
+  flex: 1;
+}
+.sidebar-menu .menu-item .badge {
+  background: rgba(255, 255, 255, 0.3);
+  color: white;
+}
+
+/* ── Main Content Global ────────────────────── */
+.main-content {
+  margin-left: var(--sidebar-width);
+  padding: 20px;
+  transition: all 0.3s ease;
+  min-height: 100vh;
+  overflow-y: auto;
+}
+
+.main-content.sidebar-hidden {
+  margin-left: 0;
+}
+
+/* ── Top Navigation Global ──────────────────── */
+.top-nav {
+  background: white;
+  padding: 15px 25px;
+  border-radius: 15px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  margin-bottom: 25px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.top-nav .page-title {
+  color: var(--primary-blue);
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.top-nav .user-info {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.top-nav .user-avatar {
+  width: 45px;
+  height: 45px;
+  background: linear-gradient(
+    135deg,
+    var(--primary-blue),
+    var(--secondary-blue)
+  );
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: bold;
+}
+
+.top-nav .user-details {
+  text-align: right;
+}
+.top-nav .user-name {
+  font-weight: 600;
+  color: var(--primary-blue);
+}
+.top-nav .user-role {
+  font-size: 0.85rem;
+  color: #6c757d;
+}
+
+/* ── Botão Toggle ──────────────────────────── */
+.btn-toggle-sidebar {
+  background: white;
+  border: 2px solid var(--primary-blue);
+  color: var(--primary-blue);
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: all 0.3s;
+  font-size: 1rem;
+}
+
+.btn-toggle-sidebar:hover {
+  background: var(--primary-blue);
+  color: white;
+  transform: scale(1.05);
+}
+
+/* ── Responsive ────────────────────────────── */
+@media (max-width: 768px) {
+  .sidebar {
+    margin-left: -280px;
+  }
+  .sidebar.hidden {
+    transform: translateX(-100%);
+  }
+  .main-content {
+    margin-left: 0;
+  }
+  .main-content.sidebar-hidden {
+    margin-left: 0;
+  }
+}
