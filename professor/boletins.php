@@ -43,15 +43,8 @@ $ano_selecionado = isset($_GET['ano']) ? (int)$_GET['ano'] : $ano_atual;
 $alunos = [];
 $boletim = [];
 $dados_aluno = null;
-$is_terminal = false;
 
 if ($turma_selecionada) {
-    // Verificar se é uma turma de 13ª classe (terminal)
-    $turma_query = "SELECT curso, nome FROM turmas WHERE id = $turma_selecionada";
-    $turma_result = $db->query($turma_query);
-    $turma_data = $turma_result->fetch_assoc();
-    $is_terminal = strpos($turma_data['curso'] ?? '', '13ª') !== false || strpos($turma_data['nome'] ?? '', '13ª') !== false;
-    
     // Buscar alunos da turma
     $query = "SELECT a.id, u.nome, a.numero_matricula
               FROM enturmacoes e
@@ -73,15 +66,13 @@ if ($aluno_selecionado) {
     $result = $db->query($query);
     $dados_aluno = $result->fetch_assoc();
     
-    // Notas unificadas (qualquer trimestre)
+    // Notas trimestrais (apenas nota_trimestre)
     $query = "SELECT 
               n.trimestre,
               d.id as disciplina_id,
               d.nome as disciplina_nome,
               d.codigo as disciplina_codigo,
-              n.avaliacao1,
-              n.avaliacao2,
-              n.exame,
+              n.nota_trimestre,
               n.media_final,
               n.estado
               FROM notas n
@@ -92,7 +83,6 @@ if ($aluno_selecionado) {
     $notas = $db->query($query);
     
     $boletim = [
-        0 => [],
         1 => [],
         2 => [],
         3 => []
@@ -103,31 +93,18 @@ if ($aluno_selecionado) {
     }
 }
 
-// Estatísticas gerais da turma
+// Estatísticas gerais da turma (apenas contagem de alunos e média geral)
 $stats_turma = [];
 if ($turma_selecionada && $ano_selecionado) {
-    if ($is_terminal) {
-        $query = "SELECT 
-                  COUNT(DISTINCT a.id) as total_alunos,
-                  COUNT(DISTINCT CASE WHEN (COALESCE(n.exame_pratico,0) + COALESCE(n.nota_estagio,0) + COALESCE(n.nota_defesa,0)) / 3 >= 10 THEN a.id END) as aprovados,
-                  COUNT(DISTINCT CASE WHEN (COALESCE(n.exame_pratico,0) + COALESCE(n.nota_estagio,0) + COALESCE(n.nota_defesa,0)) / 3 < 10 AND 
-                                       (COALESCE(n.exame_pratico,0) + COALESCE(n.nota_estagio,0) + COALESCE(n.nota_defesa,0)) > 0 THEN a.id END) as reprovados,
-                  AVG((COALESCE(n.exame_pratico,0) + COALESCE(n.nota_estagio,0) + COALESCE(n.nota_defesa,0)) / 3) as media_geral
-                  FROM enturmacoes e
-                  INNER JOIN alunos a ON e.aluno_id = a.id
-                  LEFT JOIN notas n ON a.id = n.aluno_id AND n.ano_letivo = $ano_selecionado AND n.tipo_avaliacao = 'terminal'
-                  WHERE e.turma_id = $turma_selecionada";
-    } else {
-        $query = "SELECT 
-                  COUNT(DISTINCT a.id) as total_alunos,
-                  COUNT(DISTINCT CASE WHEN n.estado = 'Aprovado' THEN a.id END) as aprovados,
-                  COUNT(DISTINCT CASE WHEN n.estado = 'Reprovado' THEN a.id END) as reprovados,
-                  AVG(n.media_final) as media_geral
-                  FROM enturmacoes e
-                  INNER JOIN alunos a ON e.aluno_id = a.id
-                  LEFT JOIN notas n ON a.id = n.aluno_id AND n.ano_letivo = $ano_selecionado AND n.tipo_avaliacao = 'trimestral'
-                  WHERE e.turma_id = $turma_selecionada";
-    }
+    $query = "SELECT 
+              COUNT(DISTINCT a.id) as total_alunos,
+              COUNT(DISTINCT CASE WHEN n.estado = 'Aprovado' THEN a.id END) as aprovados,
+              COUNT(DISTINCT CASE WHEN n.estado = 'Reprovado' THEN a.id END) as reprovados,
+              AVG(n.media_final) as media_geral
+              FROM enturmacoes e
+              INNER JOIN alunos a ON e.aluno_id = a.id
+              LEFT JOIN notas n ON a.id = n.aluno_id AND n.ano_letivo = $ano_selecionado
+              WHERE e.turma_id = $turma_selecionada";
     $result = $db->query($query);
     $stats_turma = $result->fetch_assoc();
 }
@@ -336,14 +313,14 @@ $page_title = "Boletins";
             color: var(--primary-blue);
         }
         
-        .terminal-card, .trimestre-card {
+        .trimestre-card {
             border: 1px solid #dee2e6;
             border-radius: 10px;
             margin-bottom: 25px;
             overflow: hidden;
         }
         
-        .terminal-header, .trimestre-header {
+        .trimestre-header {
             background: linear-gradient(135deg, var(--primary-blue), var(--secondary-blue));
             color: white;
             padding: 15px 20px;
@@ -351,7 +328,7 @@ $page_title = "Boletins";
             font-size: 1.1rem;
         }
         
-        .terminal-body, .trimestre-body {
+        .trimestre-body {
             padding: 20px;
         }
         
@@ -490,7 +467,7 @@ $page_title = "Boletins";
             .main-content { margin: 0; padding: 0; }
             .boletim-container { box-shadow: none; padding: 0; }
             .aluno-info { background: none; border: 1px solid #dee2e6; }
-            .terminal-header, .trimestre-header { background: #1e3c72; }
+            .trimestre-header { background: #1e3c72; }
         }
     </style>
 </head>
@@ -579,9 +556,6 @@ $page_title = "Boletins";
                         <?php while ($turma = $turmas->fetch_assoc()): ?>
                         <option value="<?php echo $turma['id']; ?>" <?php echo $turma_selecionada == $turma['id'] ? 'selected' : ''; ?>>
                             <?php echo htmlspecialchars($turma['nome']); ?> (<?php echo $turma['ano_letivo']; ?>)
-                            <?php if (strpos($turma['curso'] ?? '', '13ª') !== false || strpos($turma['nome'] ?? '', '13ª') !== false): ?>
-                                <span class="badge bg-warning text-dark ms-1">13ª Classe</span>
-                            <?php endif; ?>
                         </option>
                         <?php endwhile; ?>
                     </select>
@@ -693,244 +667,118 @@ $page_title = "Boletins";
                     </div>
                 </div>
                 <?php endif; ?>
-                
-                <?php if ($is_terminal): ?>
-                <div class="mt-2">
-                    <span class="badge bg-warning text-dark">
-                        <i class="fas fa-graduation-cap me-1"></i>13ª Classe - Avaliação Terminal
-                    </span>
-                </div>
-                <?php endif; ?>
             </div>
             
             <!-- Legenda do Sistema de Avaliação -->
             <div class="legenda-box">
                 <i class="fas fa-info-circle text-primary me-2"></i>
                 <strong>Sistema de Avaliação:</strong>
-                <?php if ($is_terminal): ?>
-                    <span class="ms-3"><i class="fas fa-calculator me-1"></i> Média = (Exame Prático + Estágio + Defesa) / 3</span>
-                <?php else: ?>
-                    <span class="ms-3"><i class="fas fa-calculator me-1"></i> Nota do Trimestre = Avaliação Única</span>
-                <?php endif; ?>
+                <span class="ms-3"><i class="fas fa-calculator me-1"></i> Nota do Trimestre = Avaliação Única</span>
                 <span class="ms-3"><i class="fas fa-chart-line text-success me-1"></i> Aprovado: ≥ 10 | Reprovado: < 10</span>
             </div>
             
-            <!-- Notas por Tipo -->
-            <?php if ($is_terminal): ?>
-                <!-- Notas Terminais (13ª Classe) -->
-                <?php $notas_terminal = $boletim['terminal'] ?? []; ?>
-                <?php if (!empty($notas_terminal)): ?>
-                <div class="terminal-card">
-                    <div class="terminal-header">
-                        <i class="fas fa-clipboard-list me-2"></i>Avaliação Terminal - 13ª Classe
-                    </div>
-                    <div class="terminal-body">
-                        <div class="disciplina-row fw-bold text-muted mb-2">
-                            <div class="disciplina-nome">Disciplina</div>
-                            <div class="disciplina-nota">Exame Prático</div>
-                            <div class="disciplina-nota">Estágio</div>
-                            <div class="disciplina-nota">Defesa</div>
-                            <div class="disciplina-nota">Média</div>
-                            <div class="disciplina-nota">Estado</div>
-                        </div>
-                        
-                        <?php 
-                        $total_disciplinas = 0;
-                        $soma_medias = 0;
-                        foreach ($notas_terminal as $nota): 
-                            $total_disciplinas++;
-                            $media = $nota['media_final'] ?? 0;
-                            $soma_medias += $media;
-                            
-                            $nota_classe = 'nota-media';
-                            if ($media >= 14) $nota_classe = 'nota-alta';
-                            elseif ($media < 10 && $media > 0) $nota_classe = 'nota-baixa';
-                            
-                            $ep = $nota['exame_pratico'] ?? 0;
-                            $ne = $nota['nota_estagio'] ?? 0;
-                            $nd = $nota['nota_defesa'] ?? 0;
-                        ?>
-                        <div class="disciplina-row">
-                            <div class="disciplina-nome">
-                                <?php echo htmlspecialchars($nota['disciplina_nome']); ?>
-                                <?php if ($nota['disciplina_codigo']): ?>
-                                <small class="text-muted">(<?php echo $nota['disciplina_codigo']; ?>)</small>
-                                <?php endif; ?>
-                            </div>
-                            <div class="disciplina-nota">
-                                <span class="nota-badge <?php echo $ep >= 10 ? 'nota-alta' : ($ep > 0 ? 'nota-baixa' : ''); ?>">
-                                    <?php echo $ep ? number_format($ep, 1) : '-'; ?>
-                                </span>
-                            </div>
-                            <div class="disciplina-nota">
-                                <span class="nota-badge <?php echo $ne >= 10 ? 'nota-alta' : ($ne > 0 ? 'nota-baixa' : ''); ?>">
-                                    <?php echo $ne ? number_format($ne, 1) : '-'; ?>
-                                </span>
-                            </div>
-                            <div class="disciplina-nota">
-                                <span class="nota-badge <?php echo $nd >= 10 ? 'nota-alta' : ($nd > 0 ? 'nota-baixa' : ''); ?>">
-                                    <?php echo $nd ? number_format($nd, 1) : '-'; ?>
-                                </span>
-                            </div>
-                            <div class="disciplina-nota">
-                                <span class="nota-badge <?php echo $nota_classe; ?>">
-                                    <?php echo $media ? number_format($media, 1) : '-'; ?>
-                                </span>
-                            </div>
-                            <div class="disciplina-nota">
-                                <?php if ($nota['estado']): ?>
-                                    <span class="badge <?php echo $nota['estado'] == 'Aprovado' ? 'bg-success' : 'bg-danger'; ?>">
-                                        <i class="fas fa-<?php echo $nota['estado'] == 'Aprovado' ? 'check-circle' : 'times-circle'; ?> me-1"></i>
-                                        <?php echo $nota['estado']; ?>
-                                    </span>
-                                <?php else: ?>
-                                    <span class="badge bg-secondary">Pendente</span>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-                        <?php endforeach; ?>
-                        
-                        <?php if ($total_disciplinas > 0): 
-                            $media_geral = round($soma_medias / $total_disciplinas, 1);
-                            $estado_geral = $media_geral >= 10 ? 'Aprovado' : ($media_geral > 0 ? 'Reprovado' : 'Em Andamento');
-                            $estado_classe = $estado_geral == 'Aprovado' ? 'estado-aprovado' : ($estado_geral == 'Reprovado' ? 'estado-reprovado' : 'estado-em-andamento');
-                        ?>
-                        <div class="row mt-4">
-                            <div class="col-md-6">
-                                <div class="info-box">
-                                    <strong>Resumo:</strong><br>
-                                    Total de Disciplinas: <?php echo $total_disciplinas; ?><br>
-                                    Média Geral: <?php echo number_format($media_geral, 1); ?>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="estado-global <?php echo $estado_classe; ?>">
-                                    <i class="fas fa-<?php echo $estado_geral == 'Aprovado' ? 'check-circle' : ($estado_geral == 'Reprovado' ? 'times-circle' : 'clock'); ?> me-2"></i>
-                                    Situação: <?php echo $estado_geral; ?>
-                                </div>
-                            </div>
-                        </div>
-                        <?php endif; ?>
-                    </div>
-                </div>
-                <?php else: ?>
-                <div class="alert alert-info text-center py-4">
-                    <i class="fas fa-info-circle fa-2x mb-2"></i>
-                    <h5>Nenhuma nota terminal registrada</h5>
-                    <p class="mb-0">Ainda não há notas lançadas para esta disciplina.</p>
-                </div>
-                <?php endif; ?>
+            <!-- Notas Trimestrais -->
+            <?php 
+            $total_disciplinas = 0;
+            $soma_medias = 0;
+            $trimestres_completos = 0;
+            ?>
+            
+            <?php for ($t = 1; $t <= 3; $t++): 
+                $notas_trimestre = $boletim[$t] ?? [];
+                if (empty($notas_trimestre)) continue;
                 
-            <?php else: ?>
-                <!-- Notas Trimestrais (1ª a 12ª Classe) -->
-                <?php 
-                $total_disciplinas = 0;
-                $soma_medias = 0;
-                $trimestres_completos = 0;
-                ?>
-                
-                <?php for ($t = 1; $t <= 3; $t++): 
-                    $notas_trimestre = $boletim[$t] ?? [];
-                    if (empty($notas_trimestre)) continue;
-                    
-                    $trimestres_completos++;
-                ?>
-                <div class="trimestre-card">
-                    <div class="trimestre-header">
-                        <i class="fas fa-calendar-alt me-2"></i><?php echo $t; ?>º Trimestre
-                    </div>
-                    <div class="trimestre-body">
-                        <div class="disciplina-row fw-bold text-muted mb-2">
-                            <div class="disciplina-nome">Disciplina</div>
-                            <div class="disciplina-nota">Nota do Trimestre</div>
-                            <div class="disciplina-nota">Média</div>
-                            <div class="disciplina-nota">Estado</div>
-                        </div>
-                        
-                        <?php foreach ($notas_trimestre as $nota): 
-                            $total_disciplinas++;
-                            $media = $nota['nota_trimestre'] ?? 0;
-                            $soma_medias += $media;
-                            
-                            $nota_classe = 'nota-media';
-                            if ($media >= 14) $nota_classe = 'nota-alta';
-                            elseif ($media < 10 && $media > 0) $nota_classe = 'nota-baixa';
-                        ?>
-                        <div class="disciplina-row">
-                            <div class="disciplina-nome">
-                                <?php echo htmlspecialchars($nota['disciplina_nome']); ?>
-                                <?php if ($nota['disciplina_codigo']): ?>
-                                <small class="text-muted">(<?php echo $nota['disciplina_codigo']; ?>)</small>
-                                <?php endif; ?>
-                            </div>
-                            <div class="disciplina-nota">
-                                <span class="nota-badge <?php echo $nota_classe; ?>">
-                                    <?php echo $media ? number_format($media, 1) : '-'; ?>
-                                </span>
-                            </div>
-                            <div class="disciplina-nota">
-                                <span class="nota-badge <?php echo $nota_classe; ?>">
-                                    <?php echo $media ? number_format($media, 1) : '-'; ?>
-                                </span>
-                            </div>
-                            <div class="disciplina-nota">
-                                <?php if ($nota['estado']): ?>
-                                    <span class="badge <?php echo $nota['estado'] == 'Aprovado' ? 'bg-success' : 'bg-danger'; ?>">
-                                        <i class="fas fa-<?php echo $nota['estado'] == 'Aprovado' ? 'check-circle' : 'times-circle'; ?> me-1"></i>
-                                        <?php echo $nota['estado']; ?>
-                                    </span>
-                                <?php else: ?>
-                                    <span class="badge bg-secondary">Pendente</span>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-                        <?php endforeach; ?>
-                    </div>
+                $trimestres_completos++;
+            ?>
+            <div class="trimestre-card">
+                <div class="trimestre-header">
+                    <i class="fas fa-calendar-alt me-2"></i><?php echo $t; ?>º Trimestre
                 </div>
-                <?php endfor; ?>
+                <div class="trimestre-body">
+                    <div class="disciplina-row fw-bold text-muted mb-2">
+                        <div class="disciplina-nome">Disciplina</div>
+                        <div class="disciplina-nota">Nota do Trimestre</div>
+                        <div class="disciplina-nota">Estado</div>
+                    </div>
+                    
+                    <?php foreach ($notas_trimestre as $nota): 
+                        $total_disciplinas++;
+                        $media = $nota['nota_trimestre'] ?? 0;
+                        $soma_medias += $media;
+                        
+                        $nota_classe = 'nota-media';
+                        if ($media >= 14) $nota_classe = 'nota-alta';
+                        elseif ($media < 10 && $media > 0) $nota_classe = 'nota-baixa';
+                    ?>
+                    <div class="disciplina-row">
+                        <div class="disciplina-nome">
+                            <?php echo htmlspecialchars($nota['disciplina_nome']); ?>
+                            <?php if ($nota['disciplina_codigo']): ?>
+                            <small class="text-muted">(<?php echo $nota['disciplina_codigo']; ?>)</small>
+                            <?php endif; ?>
+                        </div>
+                        <div class="disciplina-nota">
+                            <span class="nota-badge <?php echo $nota_classe; ?>">
+                                <?php echo $media ? number_format($media, 1) : '-'; ?>
+                            </span>
+                        </div>
+                        <div class="disciplina-nota">
+                            <?php if ($nota['estado']): ?>
+                                <span class="badge <?php echo $nota['estado'] == 'Aprovado' ? 'bg-success' : 'bg-danger'; ?>">
+                                    <i class="fas fa-<?php echo $nota['estado'] == 'Aprovado' ? 'check-circle' : 'times-circle'; ?> me-1"></i>
+                                    <?php echo $nota['estado']; ?>
+                                </span>
+                            <?php else: ?>
+                                <span class="badge bg-secondary">Pendente</span>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endfor; ?>
+            
+            <!-- Resumo Final -->
+            <?php if ($trimestres_completos > 0): 
+                $media_geral = $total_disciplinas > 0 ? round($soma_medias / $total_disciplinas, 1) : 0;
                 
-                <!-- Resumo Final -->
-                <?php if ($trimestres_completos > 0): 
-                    $media_geral = $total_disciplinas > 0 ? round($soma_medias / $total_disciplinas, 1) : 0;
-                    
-                    // Determinar estado geral do aluno
-                    $tem_reprovacao = false;
-                    $todas_completas = true;
-                    
-                    for ($t = 1; $t <= 3; $t++) {
-                        foreach ($boletim[$t] as $nota) {
-                            if ($nota['estado'] === 'Reprovado') $tem_reprovacao = true;
-                            if ($nota['estado'] === null) $todas_completas = false;
-                        }
+                // Determinar estado geral do aluno
+                $tem_reprovacao = false;
+                $todas_completas = true;
+                
+                for ($t = 1; $t <= 3; $t++) {
+                    foreach ($boletim[$t] as $nota) {
+                        if ($nota['estado'] === 'Reprovado') $tem_reprovacao = true;
+                        if ($nota['estado'] === null) $todas_completas = false;
                     }
-                    
-                    if ($tem_reprovacao) {
-                        $estado_geral = 'Reprovado';
-                        $estado_classe = 'estado-reprovado';
-                    } elseif (!$todas_completas) {
-                        $estado_geral = 'Em Andamento';
-                        $estado_classe = 'estado-em-andamento';
-                    } else {
-                        $estado_geral = 'Aprovado';
-                        $estado_classe = 'estado-aprovado';
-                    }
-                ?>
-                <div class="row mt-4">
-                    <div class="col-md-6">
-                        <div class="info-box">
-                            <strong>Resumo:</strong><br>
-                            Total de Disciplinas: <?php echo $total_disciplinas; ?><br>
-                            Média Geral: <?php echo number_format($media_geral, 1); ?>
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="estado-global <?php echo $estado_classe; ?>">
-                            <i class="fas fa-<?php echo $estado_geral == 'Aprovado' ? 'check-circle' : ($estado_geral == 'Reprovado' ? 'times-circle' : 'clock'); ?> me-2"></i>
-                            Situação: <?php echo $estado_geral; ?>
-                        </div>
+                }
+                
+                if ($tem_reprovacao) {
+                    $estado_geral = 'Reprovado';
+                    $estado_classe = 'estado-reprovado';
+                } elseif (!$todas_completas) {
+                    $estado_geral = 'Em Andamento';
+                    $estado_classe = 'estado-em-andamento';
+                } else {
+                    $estado_geral = 'Aprovado';
+                    $estado_classe = 'estado-aprovado';
+                }
+            ?>
+            <div class="row mt-4">
+                <div class="col-md-6">
+                    <div class="info-box">
+                        <strong>Resumo:</strong><br>
+                        Total de Disciplinas: <?php echo $total_disciplinas; ?><br>
+                        Média Geral: <?php echo number_format($media_geral, 1); ?>
                     </div>
                 </div>
-                <?php endif; ?>
+                <div class="col-md-6">
+                    <div class="estado-global <?php echo $estado_classe; ?>">
+                        <i class="fas fa-<?php echo $estado_geral == 'Aprovado' ? 'check-circle' : ($estado_geral == 'Reprovado' ? 'times-circle' : 'clock'); ?> me-2"></i>
+                        Situação: <?php echo $estado_geral; ?>
+                    </div>
+                </div>
+            </div>
             <?php endif; ?>
             
             <!-- Rodapé do Boletim -->

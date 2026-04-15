@@ -80,7 +80,7 @@ $query = "SELECT DISTINCT t.id, t.nome, t.ano_letivo, t.curso,
           LIMIT 5";
 $turmas_rapidas = $db->query($query);
 
-// Últimas notas lançadas
+// Últimas notas lançadas (adaptado para nova estrutura)
 $query = "SELECT n.*, u.nome as aluno_nome, d.nome as disciplina_nome, t.nome as turma_nome
           FROM notas n
           INNER JOIN alunos a ON n.aluno_id = a.id
@@ -597,7 +597,7 @@ $page_title = "Dashboard Professor";
             </div>
         </div>
         
-        <!-- Últimas Notas Lançadas -->
+        <!-- Últimas Notas Lançadas (adaptado para nova estrutura) -->
         <div class="row mt-4">
             <div class="col-12">
                 <div class="table-container">
@@ -614,13 +614,9 @@ $page_title = "Dashboard Professor";
                                     <th>Turma</th>
                                     <th>Disciplina</th>
                                     <th>Trimestre</th>
-                                    <th>AV1</th>
-                                    <th>AV2</th>
-                                    <th>Exame</th>
-                                    <th>Média</th>
+                                    <th>Nota</th>
                                     <th>Estado</th>
-                                </tr>
-                            </thead>
+                                 </thead>
                             <tbody>
                                 <?php if ($ultimas_notas && $ultimas_notas->num_rows > 0): ?>
                                     <?php while ($nota = $ultimas_notas->fetch_assoc()): ?>
@@ -632,23 +628,20 @@ $page_title = "Dashboard Professor";
                                         <td><?php echo htmlspecialchars($nota['turma_nome']); ?></td>
                                         <td><?php echo htmlspecialchars($nota['disciplina_nome']); ?></td>
                                         <td><?php echo $nota['trimestre']; ?>º Trim</td>
-                                        <td><?php echo $nota['avaliacao1'] ?? '-'; ?></td>
-                                        <td><?php echo $nota['avaliacao2'] ?? '-'; ?></td>
-                                        <td><?php echo $nota['exame'] ?? '-'; ?></td>
                                         <td>
-                                            <?php if ($nota['media_final']): ?>
+                                            <?php if ($nota['nota_trimestre'] !== null): ?>
                                                 <span class="nota-badge 
                                                     <?php 
-                                                    if ($nota['media_final'] >= 14) echo 'nota-alta';
-                                                    elseif ($nota['media_final'] >= 10) echo 'nota-media';
+                                                    if ($nota['nota_trimestre'] >= 14) echo 'nota-alta';
+                                                    elseif ($nota['nota_trimestre'] >= 10) echo 'nota-media';
                                                     else echo 'nota-baixa';
                                                     ?>">
-                                                    <?php echo $nota['media_final']; ?>
+                                                    <?php echo number_format($nota['nota_trimestre'], 1); ?>
                                                 </span>
                                             <?php else: ?>
                                                 -
                                             <?php endif; ?>
-                                        </td>
+                                         </td>
                                         <td>
                                             <?php if ($nota['estado']): ?>
                                                 <span class="badge <?php echo $nota['estado'] == 'Aprovado' ? 'bg-success' : 'bg-danger'; ?>">
@@ -657,15 +650,15 @@ $page_title = "Dashboard Professor";
                                             <?php else: ?>
                                                 <span class="badge bg-secondary">Incompleto</span>
                                             <?php endif; ?>
-                                        </td>
+                                         </td>
                                     </tr>
                                     <?php endwhile; ?>
                                 <?php else: ?>
                                     <tr>
-                                        <td colspan="10" class="text-center py-4">
+                                        <td colspan="7" class="text-center py-4">
                                             <i class="fas fa-info-circle me-2 text-muted"></i>
                                             Nenhuma nota lançada recentemente.
-                                        </td>
+                                         </td>
                                     </tr>
                                 <?php endif; ?>
                             </tbody>

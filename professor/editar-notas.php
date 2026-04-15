@@ -56,23 +56,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $old_result = $db->query($old_query);
             $old_data = $old_result->fetch_assoc();
             
-            // Processar notas: avaliacao1, avaliacao2, exame
-            $avaliacao1 = isset($dados['avaliacao1']) && $dados['avaliacao1'] !== '' ? (float)$dados['avaliacao1'] : null;
-            $avaliacao2 = isset($dados['avaliacao2']) && $dados['avaliacao2'] !== '' ? (float)$dados['avaliacao2'] : null;
-            $exame = isset($dados['exame']) && $dados['exame'] !== '' ? (float)$dados['exame'] : null;
+            // Nova estrutura: apenas nota_trimestre
+            $nota_trimestre = isset($dados['nota_trimestre']) && $dados['nota_trimestre'] !== '' ? (float)$dados['nota_trimestre'] : null;
             
-            // Validar notas (0-20)
-            if (($avaliacao1 !== null && ($avaliacao1 < 0 || $avaliacao1 > 20)) ||
-                ($avaliacao2 !== null && ($avaliacao2 < 0 || $avaliacao2 > 20)) ||
-                ($exame !== null && ($exame < 0 || $exame > 20))) {
+            // Validar nota (0-20)
+            if ($nota_trimestre !== null && ($nota_trimestre < 0 || $nota_trimestre > 20)) {
                 $erros++;
                 continue;
             }
             
             $update_query = "UPDATE notas SET 
-                            avaliacao1 = " . ($avaliacao1 !== null ? $avaliacao1 : "NULL") . ",
-                            avaliacao2 = " . ($avaliacao2 !== null ? $avaliacao2 : "NULL") . ",
-                            exame = " . ($exame !== null ? $exame : "NULL") . ",
+                            nota_trimestre = " . ($nota_trimestre !== null ? $nota_trimestre : "NULL") . ",
                             ultima_edicao_por = {$_SESSION['user_id']},
                             ultima_edicao_em = NOW()
                             WHERE id = $nota_id";
@@ -141,7 +135,7 @@ if ($turma_selecionada) {
 }
 
 if ($turma_selecionada && $disciplina_selecionada && $trimestre_selecionado) {
-    // Buscar notas dos alunos - estrutura única para todos os trimestres
+    // Buscar notas dos alunos - nova estrutura (nota_trimestre)
     $query = "SELECT n.*, 
               u.nome as aluno_nome, 
               a.numero_matricula,
@@ -167,9 +161,9 @@ $stats = ['total_notas' => 0, 'aprovados' => 0, 'reprovados' => 0, 'media_geral'
 if ($turma_selecionada && $disciplina_selecionada && $trimestre_selecionado && $notas && $notas->num_rows > 0) {
     $stats_query = "SELECT 
                     COUNT(DISTINCT n.id) as total_notas,
-                    SUM(CASE WHEN n.media_final >= 10 THEN 1 ELSE 0 END) as aprovados,
-                    SUM(CASE WHEN n.media_final < 10 AND n.media_final > 0 THEN 1 ELSE 0 END) as reprovados,
-                    AVG(n.media_final) as media_geral
+                    SUM(CASE WHEN n.estado = 'Aprovado' THEN 1 ELSE 0 END) as aprovados,
+                    SUM(CASE WHEN n.estado = 'Reprovado' THEN 1 ELSE 0 END) as reprovados,
+                    AVG(n.nota_trimestre) as media_geral
                     FROM notas n
                     INNER JOIN alunos a ON n.aluno_id = a.id
                     INNER JOIN enturmacoes e ON a.id = e.aluno_id
@@ -470,16 +464,6 @@ $page_title = "Editar Notas";
             background: #fff0f0;
         }
         
-        .media-box {
-            background: #f8f9fa;
-            padding: 6px 12px;
-            border-radius: 8px;
-            text-align: center;
-            font-weight: 600;
-            display: inline-block;
-            min-width: 60px;
-        }
-        
         .estado-box {
             padding: 6px 12px;
             border-radius: 20px;
@@ -760,32 +744,21 @@ $page_title = "Editar Notas";
                                     <th style="width: 50px;">#</th>
                                     <th>Aluno</th>
                                     <th style="width: 120px;">Matrícula</th>
-                                    <th style="width: 130px;">Avaliação 1</th>
-                                    <th style="width: 130px;">Avaliação 2</th>
-                                    <th style="width: 130px;">Exame</th>
-                                    <th style="width: 80px;">MAC</th>
-                                    <th style="width: 80px;">Média</th>
+                                    <th style="width: 130px;">Nota do Trimestre</th>
                                     <th style="width: 100px;">Estado</th>
                                     <th style="width: 140px;">Última Edição</th>
-                                </tr>
-                            </thead>
+                                 </thead>
                             <tbody>
                                 <?php 
                                 $index = 1;
                                 while ($nota = $notas->fetch_assoc()): 
                                     $iniciais = substr($nota['aluno_nome'], 0, 2);
+                                    $periodo_aberto = isset($periodos_abertos[$trimestre_selecionado]);
                                     
-                                    // Calcular médias baseado nas colunas reais
-                                    $av1 = $nota['avaliacao1'] ? (float)$nota['avaliacao1'] : 0;
-                                    $av2 = $nota['avaliacao2'] ? (float)$nota['avaliacao2'] : 0;
-                                    $exame = $nota['exame'] ? (float)$nota['exame'] : 0;
-                                    $mac = ($av1 + $av2) / 2;
-                                    $media_final = ($mac + $exame) / 2;
-                                    
-                                    $estado = $media_final >= 10 ? 'Aprovado' : ($media_final > 0 ? 'Reprovado' : 'Incompleto');
+                                    $nota_valor = $nota['nota_trimestre'] ?? null;
+                                    $estado = $nota['estado'] ?? 'Incompleto';
                                     $estadoClass = $estado == 'Aprovado' ? 'estado-aprovado' : ($estado == 'Reprovado' ? 'estado-reprovado' : 'estado-incompleto');
                                     $estadoIcone = $estado == 'Aprovado' ? 'fa-check-circle' : ($estado == 'Reprovado' ? 'fa-times-circle' : 'fa-hourglass-half');
-                                    $periodo_aberto = isset($periodos_abertos[$trimestre_selecionado]);
                                 ?>
                                     <tr>
                                         <td class="text-center"><?php echo $index++; ?></td>
@@ -808,45 +781,15 @@ $page_title = "Editar Notas";
                                         <td>
                                             <input type="number" 
                                                    class="nota-input <?php echo !$periodo_aberto ? 'bg-light' : ''; ?>" 
-                                                   name="notas[<?php echo $nota['id']; ?>][avaliacao1]" 
-                                                   value="<?php echo $nota['avaliacao1']; ?>"
+                                                   name="notas[<?php echo $nota['id']; ?>][nota_trimestre]" 
+                                                   value="<?php echo $nota_valor !== null ? number_format($nota_valor, 1) : ''; ?>"
                                                    min="0" max="20" step="0.1"
                                                    placeholder="0-20"
-                                                   onchange="calcularMedia(this, <?php echo $nota['id']; ?>)"
+                                                   onchange="validarCampo(this)"
                                                    <?php echo !$periodo_aberto ? 'disabled' : ''; ?>>
                                         </td>
                                         <td>
-                                            <input type="number" 
-                                                   class="nota-input <?php echo !$periodo_aberto ? 'bg-light' : ''; ?>" 
-                                                   name="notas[<?php echo $nota['id']; ?>][avaliacao2]" 
-                                                   value="<?php echo $nota['avaliacao2']; ?>"
-                                                   min="0" max="20" step="0.1"
-                                                   placeholder="0-20"
-                                                   onchange="calcularMedia(this, <?php echo $nota['id']; ?>)"
-                                                   <?php echo !$periodo_aberto ? 'disabled' : ''; ?>>
-                                        </td>
-                                        <td>
-                                            <input type="number" 
-                                                   class="nota-input <?php echo !$periodo_aberto ? 'bg-light' : ''; ?>" 
-                                                   name="notas[<?php echo $nota['id']; ?>][exame]" 
-                                                   value="<?php echo $nota['exame']; ?>"
-                                                   min="0" max="20" step="0.1"
-                                                   placeholder="0-20"
-                                                   onchange="calcularMedia(this, <?php echo $nota['id']; ?>)"
-                                                   <?php echo !$periodo_aberto ? 'disabled' : ''; ?>>
-                                        </td>
-                                        <td class="text-center">
-                                            <span class="media-box" id="mac_<?php echo $nota['id']; ?>">
-                                                <?php echo $mac > 0 ? number_format($mac, 1) : '-'; ?>
-                                            </span>
-                                        </td>
-                                        <td class="text-center">
-                                            <span class="media-box" id="media_<?php echo $nota['id']; ?>">
-                                                <?php echo $media_final > 0 ? number_format($media_final, 1) : '-'; ?>
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <span class="estado-box <?php echo $estadoClass; ?>" id="estado_<?php echo $nota['id']; ?>">
+                                            <span class="estado-box <?php echo $estadoClass; ?>">
                                                 <i class="fas <?php echo $estadoIcone; ?>"></i>
                                                 <?php echo $estado; ?>
                                             </span>
@@ -858,148 +801,102 @@ $page_title = "Editar Notas";
                                             </small>
                                         </td>
                                     </tr>
-                                    <?php endwhile; ?>
-                                </tbody>
-                            </table>
+                                <?php endwhile; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Legenda -->
+                    <div class="legenda-box">
+                        <i class="fas fa-info-circle text-primary me-2"></i>
+                        <strong>Sistema de Avaliação:</strong>
+                        <span class="ms-3"><i class="fas fa-calculator me-1"></i> Nota única por trimestre</span>
+                        <span class="ms-3"><i class="fas fa-chart-line text-success me-1"></i> Aprovado: ≥ 10 | Reprovado: < 10</span>
+                    </div>
+                    
+                    <!-- Botões -->
+                    <div class="action-bar">
+                        <div>
+                            <i class="fas fa-info-circle text-muted me-2"></i>
+                            <small>As alterações serão registradas no histórico de auditoria.</small>
                         </div>
-                        
-                        <!-- Legenda -->
-                        <div class="legenda-box">
-                            <i class="fas fa-info-circle text-primary me-2"></i>
-                            <strong>Sistema de Avaliação:</strong>
-                            <span class="ms-3"><i class="fas fa-calculator me-1"></i> MAC = (Av1 + Av2) / 2 | Média = (MAC + Exame) / 2</span>
-                            <span class="ms-3"><i class="fas fa-chart-line text-success me-1"></i> Aprovado: ≥ 10 | Reprovado: < 10</span>
-                        </div>
-                        
-                        <!-- Botões -->
-                        <div class="action-bar">
-                            <div>
-                                <i class="fas fa-info-circle text-muted me-2"></i>
-                                <small>As alterações serão registradas no histórico de auditoria.</small>
-                            </div>
-                            <?php if (isset($periodos_abertos[$trimestre_selecionado])): ?>
-                            <button type="submit" class="btn-editar" onclick="return confirm('⚠️ Tem certeza que deseja salvar as alterações?')">
-                                <i class="fas fa-save me-2"></i>Salvar Alterações
-                            </button>
-                            <?php else: ?>
-                            <button type="button" class="btn-editar" disabled style="opacity: 0.6;">
-                                <i class="fas fa-lock me-2"></i>Período Fechado
-                            </button>
-                            <?php endif; ?>
-                        </div>
-                    </form>
-                </div>
-                <?php else: ?>
-                <div class="alert alert-info text-center py-5">
-                    <i class="fas fa-search fa-3x mb-3"></i>
-                    <h5>Nenhuma nota encontrada</h5>
-                    <p>Não há notas lançadas para esta turma, disciplina e trimestre.</p>
-                    <a href="lancar-notas.php?turma_id=<?php echo $turma_selecionada; ?>&disciplina_id=<?php echo $disciplina_selecionada; ?>&trimestre=<?php echo $trimestre_selecionado; ?>" class="btn btn-primary mt-3">
-                        <i class="fas fa-plus-circle me-2"></i>Lançar Notas Agora
-                    </a>
-                </div>
-                <?php endif; ?>
-            <?php elseif ($turma_selecionada && $disciplina_selecionada): ?>
-            <div class="alert alert-warning text-center py-5">
-                <i class="fas fa-hand-pointer fa-3x mb-3"></i>
-                <h5>Selecione um trimestre</h5>
-                <p>Escolha o trimestre para visualizar as notas.</p>
-            </div>
-            <?php elseif ($turma_selecionada): ?>
-            <div class="alert alert-warning text-center py-5">
-                <i class="fas fa-book-open fa-3x mb-3"></i>
-                <h5>Selecione uma disciplina</h5>
-                <p>Escolha a disciplina que deseja editar.</p>
+                        <?php if (isset($periodos_abertos[$trimestre_selecionado])): ?>
+                        <button type="submit" class="btn-editar" onclick="return confirm('⚠️ Tem certeza que deseja salvar as alterações?')">
+                            <i class="fas fa-save me-2"></i>Salvar Alterações
+                        </button>
+                        <?php else: ?>
+                        <button type="button" class="btn-editar" disabled style="opacity: 0.6;">
+                            <i class="fas fa-lock me-2"></i>Período Fechado
+                        </button>
+                        <?php endif; ?>
+                    </div>
+                </form>
             </div>
             <?php else: ?>
             <div class="alert alert-info text-center py-5">
-                <i class="fas fa-arrow-left fa-3x mb-3"></i>
-                <h5>Selecione uma turma</h5>
-                <p>Use os filtros acima para encontrar as notas que deseja editar.</p>
+                <i class="fas fa-search fa-3x mb-3"></i>
+                <h5>Nenhuma nota encontrada</h5>
+                <p>Não há notas lançadas para esta turma, disciplina e trimestre.</p>
+                <a href="lancar-notas.php?turma_id=<?php echo $turma_selecionada; ?>&disciplina_id=<?php echo $disciplina_selecionada; ?>&trimestre=<?php echo $trimestre_selecionado; ?>" class="btn btn-primary mt-3">
+                    <i class="fas fa-plus-circle me-2"></i>Lançar Notas Agora
+                </a>
             </div>
             <?php endif; ?>
+        <?php elseif ($turma_selecionada && $disciplina_selecionada): ?>
+        <div class="alert alert-warning text-center py-5">
+            <i class="fas fa-hand-pointer fa-3x mb-3"></i>
+            <h5>Selecione um trimestre</h5>
+            <p>Escolha o trimestre para visualizar as notas.</p>
         </div>
+        <?php elseif ($turma_selecionada): ?>
+        <div class="alert alert-warning text-center py-5">
+            <i class="fas fa-book-open fa-3x mb-3"></i>
+            <h5>Selecione uma disciplina</h5>
+            <p>Escolha a disciplina que deseja editar.</p>
+        </div>
+        <?php else: ?>
+        <div class="alert alert-info text-center py-5">
+            <i class="fas fa-arrow-left fa-3x mb-3"></i>
+            <h5>Selecione uma turma</h5>
+            <p>Use os filtros acima para encontrar as notas que deseja editar.</p>
+        </div>
+        <?php endif; ?>
+    </div>
+    
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        function validarCampo(campo) {
+            if (!campo) return;
+            var valor = parseFloat(campo.value);
+            if (campo.value === '') {
+                campo.classList.remove('valida', 'invalida');
+                return;
+            }
+            if (valor >= 0 && valor <= 20) {
+                campo.classList.add('valida');
+                campo.classList.remove('invalida');
+            } else {
+                campo.classList.add('invalida');
+                campo.classList.remove('valida');
+            }
+        }
         
-        <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+        document.getElementById('formEditarNotas')?.addEventListener('submit', function(e) {
+            var invalidos = document.querySelectorAll('.invalida');
+            if (invalidos.length > 0) {
+                e.preventDefault();
+                alert('⚠️ Existem notas inválidas (fora do intervalo 0-20). Por favor, corrija antes de salvar.');
+            }
+        });
         
-        <script>
-            function calcularMedia(input, notaId) {
-                var linha = input.closest('tr');
-                var av1 = parseFloat(linha.querySelector('input[name="notas[' + notaId + '][avaliacao1]"]')?.value) || 0;
-                var av2 = parseFloat(linha.querySelector('input[name="notas[' + notaId + '][avaliacao2]"]')?.value) || 0;
-                var exame = parseFloat(linha.querySelector('input[name="notas[' + notaId + '][exame]"]')?.value) || 0;
-                
-                var mac = null;
-                var media = null;
-                var estado = 'Incompleto';
-                
-                if (av1 > 0 || av2 > 0 || exame > 0) {
-                    mac = ((av1 + av2) / 2).toFixed(1);
-                    media = ((parseFloat(mac) + exame) / 2).toFixed(1);
-                    estado = media >= 10 ? 'Aprovado' : 'Reprovado';
-                }
-                
-                var macSpan = document.getElementById('mac_' + notaId);
-                var mediaSpan = document.getElementById('media_' + notaId);
-                var estadoSpan = document.getElementById('estado_' + notaId);
-                
-                if (macSpan) {
-                    macSpan.textContent = mac || '-';
-                }
-                
-                if (mediaSpan) {
-                    mediaSpan.textContent = media || '-';
-                    if (media >= 10) {
-                        mediaSpan.style.background = '#d4edda';
-                        mediaSpan.style.color = '#155724';
-                    } else if (media > 0) {
-                        mediaSpan.style.background = '#f8d7da';
-                        mediaSpan.style.color = '#721c24';
-                    } else {
-                        mediaSpan.style.background = '#f8f9fa';
-                        mediaSpan.style.color = '#6c757d';
-                    }
-                }
-                
-                if (estadoSpan) {
-                    estadoSpan.innerHTML = '<i class="fas ' + (estado == 'Aprovado' ? 'fa-check-circle' : (estado == 'Reprovado' ? 'fa-times-circle' : 'fa-hourglass-half')) + '"></i> ' + estado;
-                    estadoSpan.className = 'estado-box ' + 
-                        (estado == 'Aprovado' ? 'estado-aprovado' : 
-                         (estado == 'Reprovado' ? 'estado-reprovado' : 'estado-incompleto'));
-                }
-                
-                validarCampo(input);
-            }
-            
-            function validarCampo(campo) {
-                if (!campo) return;
-                var valor = parseFloat(campo.value);
-                if (campo.value === '') {
-                    campo.classList.remove('valida', 'invalida');
-                } else if (valor >= 0 && valor <= 20) {
-                    campo.classList.add('valida');
-                    campo.classList.remove('invalida');
-                } else {
-                    campo.classList.add('invalida');
-                    campo.classList.remove('valida');
-                }
-            }
-            
-            document.getElementById('formEditarNotas')?.addEventListener('submit', function(e) {
-                var invalidos = document.querySelectorAll('.invalida');
-                if (invalidos.length > 0) {
-                    e.preventDefault();
-                    alert('⚠️ Existem notas inválidas (fora do intervalo 0-20). Por favor, corrija antes de salvar.');
-                }
-            });
-            
-            function toggleSidebar() {
-                const sidebar = document.querySelector('.sidebar');
-                const mainContent = document.querySelector('.main-content');
-                sidebar.classList.toggle('hidden');
-                mainContent.classList.toggle('sidebar-hidden');
-            }
-        </script>
-    </body>
-    </html>
+        function toggleSidebar() {
+            const sidebar = document.querySelector('.sidebar');
+            const mainContent = document.querySelector('.main-content');
+            sidebar.classList.toggle('hidden');
+            mainContent.classList.toggle('sidebar-hidden');
+        }
+    </script>
+</body>
+</html>

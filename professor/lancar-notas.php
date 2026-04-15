@@ -46,13 +46,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         foreach ($alunos as $aluno_id) {
             $aluno_id = (int)$aluno_id;
             
-            $av1 = isset($_POST['avaliacao1'][$aluno_id]) ? (float)$_POST['avaliacao1'][$aluno_id] : null;
-            $av2 = isset($_POST['avaliacao2'][$aluno_id]) ? (float)$_POST['avaliacao2'][$aluno_id] : null;
-            $ex = isset($_POST['exame'][$aluno_id]) ? (float)$_POST['exame'][$aluno_id] : null;
+            // Nova estrutura: apenas nota_trimestre
+            $nota_trimestre = isset($_POST['nota_trimestre'][$aluno_id]) && $_POST['nota_trimestre'][$aluno_id] !== '' 
+                ? (float)$_POST['nota_trimestre'][$aluno_id] 
+                : null;
             
-            if (($av1 !== null && ($av1 < 0 || $av1 > 20)) ||
-                ($av2 !== null && ($av2 < 0 || $av2 > 20)) ||
-                ($ex !== null && ($ex < 0 || $ex > 20))) {
+            if ($nota_trimestre !== null && ($nota_trimestre < 0 || $nota_trimestre > 20)) {
                 $error = "Nota inválida para o aluno $aluno_id (deve estar entre 0 e 20).";
                 break;
             }
@@ -61,20 +60,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $check = $db->query("SELECT id FROM notas WHERE aluno_id = $aluno_id AND disciplina_id = $disciplina_id AND ano_letivo = $ano_atual AND trimestre = $trimestre");
             if ($check->num_rows > 0) {
                 // Atualizar
-                $av1_val = $av1 !== null ? $av1 : 'NULL';
-                $av2_val = $av2 !== null ? $av2 : 'NULL';
-                $ex_val = $ex !== null ? $ex : 'NULL';
-                $update = $db->query("UPDATE notas SET avaliacao1 = $av1_val, avaliacao2 = $av2_val, exame = $ex_val, ultima_edicao_por = {$_SESSION['user_id']} WHERE aluno_id = $aluno_id AND disciplina_id = $disciplina_id AND ano_letivo = $ano_atual AND trimestre = $trimestre");
+                $nota_val = $nota_trimestre !== null ? $nota_trimestre : 'NULL';
+                $update = $db->query("UPDATE notas SET nota_trimestre = $nota_val, ultima_edicao_por = {$_SESSION['user_id']} WHERE aluno_id = $aluno_id AND disciplina_id = $disciplina_id AND ano_letivo = $ano_atual AND trimestre = $trimestre");
                 if ($update) {
                     $db->query("INSERT INTO logs_auditoria (usuario_id, acao, tabela, registro_id, ip) VALUES ({$_SESSION['user_id']}, 'EDITAR_NOTA', 'notas', $aluno_id, '$ip')");
                     $success_count++;
                 }
             } else {
                 // Inserir
-                $av1_val = $av1 !== null ? $av1 : 'NULL';
-                $av2_val = $av2 !== null ? $av2 : 'NULL';
-                $ex_val = $ex !== null ? $ex : 'NULL';
-                $insert = $db->query("INSERT INTO notas (aluno_id, disciplina_id, ano_letivo, trimestre, avaliacao1, avaliacao2, exame, ultima_edicao_por) VALUES ($aluno_id, $disciplina_id, $ano_atual, $trimestre, $av1_val, $av2_val, $ex_val, {$_SESSION['user_id']})");
+                $nota_val = $nota_trimestre !== null ? $nota_trimestre : 'NULL';
+                $insert = $db->query("INSERT INTO notas (aluno_id, disciplina_id, ano_letivo, trimestre, nota_trimestre, ultima_edicao_por) VALUES ($aluno_id, $disciplina_id, $ano_atual, $trimestre, $nota_val, {$_SESSION['user_id']})");
                 if ($insert) {
                     $db->query("INSERT INTO logs_auditoria (usuario_id, acao, tabela, registro_id, ip) VALUES ({$_SESSION['user_id']}, 'CRIAR_NOTA', 'notas', $db->insert_id, '$ip')");
                     $success_count++;
@@ -145,7 +140,7 @@ if ($turma_selecionada && $disciplina_selecionada) {
     
     $alunos_notas = [];
     while ($aluno = $alunos->fetch_assoc()) {
-        $query = "SELECT * FROM notas 
+        $query = "SELECT nota_trimestre, estado FROM notas 
                   WHERE aluno_id = {$aluno['id']} 
                   AND disciplina_id = $disciplina_selecionada
                   AND ano_letivo = $ano_atual
@@ -157,9 +152,8 @@ if ($turma_selecionada && $disciplina_selecionada) {
             'id' => $aluno['id'],
             'nome' => $aluno['nome'],
             'matricula' => $aluno['numero_matricula'],
-            'avaliacao1' => $nota['avaliacao1'] ?? '',
-            'avaliacao2' => $nota['avaliacao2'] ?? '',
-            'exame' => $nota['exame'] ?? ''
+            'nota_trimestre' => $nota['nota_trimestre'] ?? '',
+            'estado' => $nota['estado'] ?? 'Pendente'
         ];
     }
 }
@@ -431,16 +425,6 @@ $page_title = "Lançar Notas";
             background: #fff0f0;
         }
         
-        .media-box {
-            background: #f8f9fa;
-            padding: 6px 12px;
-            border-radius: 8px;
-            text-align: center;
-            font-weight: 600;
-            display: inline-block;
-            min-width: 60px;
-        }
-        
         .estado-box {
             padding: 6px 12px;
             border-radius: 20px;
@@ -623,7 +607,9 @@ $page_title = "Lançar Notas";
                     <label class="form-label">Turma</label>
                     <select class="form-select" name="turma_id" onchange="this.form.submit()" required>
                         <option value="">-- Selecione uma turma --</option>
-                        <?php while ($turma = $turmas->fetch_assoc()): ?>
+                        <?php 
+                        $turmas->data_seek(0);
+                        while ($turma = $turmas->fetch_assoc()): ?>
                         <option value="<?php echo $turma['id']; ?>" <?php echo $turma_selecionada == $turma['id'] ? 'selected' : ''; ?>>
                             <?php echo htmlspecialchars($turma['nome']); ?> (<?php echo $turma['ano_letivo']; ?>)
                         </option>
@@ -680,24 +666,14 @@ $page_title = "Lançar Notas";
                                 <th style="width: 50px;">#</th>
                                 <th>Aluno</th>
                                 <th style="width: 120px;">Matrícula</th>
-                                <th style="width: 120px;">Avaliação 1</th>
-                                <th style="width: 120px;">Avaliação 2</th>
-                                <th style="width: 120px;">Exame</th>
-                                <th style="width: 80px;">MAC</th>
-                                <th style="width: 80px;">Média</th>
+                                <th style="width: 130px;">Nota do Trimestre</th>
                                 <th style="width: 100px;">Estado</th>
                              </thead>
                             <tbody>
                                 <?php foreach ($alunos_notas as $index => $aluno): 
                                     $iniciais = substr($aluno['nome'], 0, 2);
-                                    $av1 = $aluno['avaliacao1'] ? (float)$aluno['avaliacao1'] : 0;
-                                    $av2 = $aluno['avaliacao2'] ? (float)$aluno['avaliacao2'] : 0;
-                                    $ex = $aluno['exame'] ? (float)$aluno['exame'] : 0;
-                                    
-                                    $mac = ($av1 && $av2) ? ($av1 + $av2) / 2 : 0;
-                                    $media = ($mac && $ex) ? ($mac + $ex) / 2 : 0;
-                                    
-                                    $estado = $media >= 10 ? 'Aprovado' : ($media > 0 ? 'Reprovado' : 'Incompleto');
+                                    $nota_valor = $aluno['nota_trimestre'] !== '' ? (float)$aluno['nota_trimestre'] : 0;
+                                    $estado = $aluno['estado'] ?? 'Incompleto';
                                     $estadoClass = $estado == 'Aprovado' ? 'estado-aprovado' : ($estado == 'Reprovado' ? 'estado-reprovado' : 'estado-incompleto');
                                     $estadoIcone = $estado == 'Aprovado' ? 'fa-check-circle' : ($estado == 'Reprovado' ? 'fa-times-circle' : 'fa-hourglass-half');
                                 ?>
@@ -723,47 +699,20 @@ $page_title = "Lançar Notas";
                                     <td>
                                         <input type="number" 
                                                class="nota-input" 
-                                               name="avaliacao1[<?php echo $aluno['id']; ?>]" 
-                                               value="<?php echo $aluno['avaliacao1'] ?: ''; ?>"
+                                               name="nota_trimestre[<?php echo $aluno['id']; ?>]" 
+                                               value="<?php echo $aluno['nota_trimestre'] ?: ''; ?>"
                                                min="0" max="20" step="0.1"
                                                placeholder="0-20"
-                                               onchange="calcularMedia(this, <?php echo $aluno['id']; ?>)">
-                                    </td>
-                                    <td>
-                                        <input type="number" 
-                                               class="nota-input" 
-                                               name="avaliacao2[<?php echo $aluno['id']; ?>]" 
-                                               value="<?php echo $aluno['avaliacao2'] ?: ''; ?>"
-                                               min="0" max="20" step="0.1"
-                                               placeholder="0-20"
-                                               onchange="calcularMedia(this, <?php echo $aluno['id']; ?>)">
-                                    </td>
-                                    <td>
-                                        <input type="number" 
-                                               class="nota-input" 
-                                               name="exame[<?php echo $aluno['id']; ?>]" 
-                                               value="<?php echo $aluno['exame'] ?: ''; ?>"
-                                               min="0" max="20" step="0.1"
-                                               placeholder="0-20"
-                                               onchange="calcularMedia(this, <?php echo $aluno['id']; ?>)">
-                                    </td>
-                                    <td class="text-center">
-                                        <span class="media-box" id="mac_<?php echo $aluno['id']; ?>">
-                                            <?php echo $mac ? number_format($mac, 1) : '-'; ?>
-                                        </span>
-                                    </td>
-                                    <td class="text-center">
-                                        <span class="media-box" id="media_<?php echo $aluno['id']; ?>">
-                                            <?php echo $media ? number_format($media, 1) : '-'; ?>
-                                        </span>
-                                    </td>
-                                    <td class="text-center">
-                                        <span class="estado-box <?php echo $estadoClass; ?>" id="estado_<?php echo $aluno['id']; ?>">
-                                            <i class="fas <?php echo $estadoIcone; ?>"></i>
-                                            <?php echo $estado; ?>
-                                        </span>
-                                    </td>
-                                 </tr>
+                                               onchange="validarNota(this, <?php echo $aluno['id']; ?>)"
+                                               <?php echo isset($periodos_abertos[$trimestre_selecionado]) ? '' : 'disabled'; ?>>
+                                        </td>
+                                        <td>
+                                            <span class="estado-box <?php echo $estadoClass; ?>" id="estado_<?php echo $aluno['id']; ?>">
+                                                <i class="fas <?php echo $estadoIcone; ?>"></i>
+                                                <?php echo $estado; ?>
+                                            </span>
+                                        </td>
+                                    </tr>
                                 <?php endforeach; ?>
                             </tbody>
                         </table>
@@ -773,8 +722,7 @@ $page_title = "Lançar Notas";
                     <div class="legenda-box">
                         <i class="fas fa-info-circle text-primary me-2"></i>
                         <strong>Sistema de Avaliação:</strong>
-                        <span class="ms-3"><i class="fas fa-calculator me-1"></i> MAC = (Avaliação 1 + Avaliação 2) / 2</span>
-                        <span class="ms-3"><i class="fas fa-calculator me-1"></i> Média Final = (MAC + Exame) / 2</span>
+                        <span class="ms-3"><i class="fas fa-calculator me-1"></i> Nota única por trimestre</span>
                         <span class="ms-3"><i class="fas fa-chart-line text-success me-1"></i> Aprovado: ≥ 10 | Reprovado: < 10</span>
                     </div>
                     
@@ -821,74 +769,38 @@ $page_title = "Lançar Notas";
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
         
         <script>
-            function calcularMedia(input, alunoId) {
-                var linha = input.closest('tr');
-                
-                var av1 = parseFloat(linha.querySelector('input[name="avaliacao1[' + alunoId + ']"]')?.value) || 0;
-                var av2 = parseFloat(linha.querySelector('input[name="avaliacao2[' + alunoId + ']"]')?.value) || 0;
-                var ex = parseFloat(linha.querySelector('input[name="exame[' + alunoId + ']"]')?.value) || 0;
-                
-                var mac = (av1 > 0 && av2 > 0) ? ((av1 + av2) / 2).toFixed(1) : null;
-                var media = (mac !== null && ex > 0) ? ((parseFloat(mac) + ex) / 2).toFixed(1) : null;
-                var estado = 'Incompleto';
-                
-                if (media !== null) {
-                    estado = media >= 10 ? 'Aprovado' : 'Reprovado';
-                }
-                
-                var macSpan = document.getElementById('mac_' + alunoId);
-                var mediaSpan = document.getElementById('media_' + alunoId);
+            function validarNota(input, alunoId) {
+                var valor = parseFloat(input.value);
                 var estadoSpan = document.getElementById('estado_' + alunoId);
                 
-                if (macSpan) {
-                    macSpan.textContent = mac || '-';
-                    if (mac >= 10) {
-                        macSpan.style.background = '#d4edda';
-                        macSpan.style.color = '#155724';
-                    } else if (mac > 0) {
-                        macSpan.style.background = '#f8d7da';
-                        macSpan.style.color = '#721c24';
-                    } else {
-                        macSpan.style.background = '#f8f9fa';
-                        macSpan.style.color = '#6c757d';
+                if (input.value === '') {
+                    input.classList.remove('valida', 'invalida');
+                    if (estadoSpan) {
+                        estadoSpan.innerHTML = '<i class="fas fa-hourglass-half"></i> Incompleto';
+                        estadoSpan.className = 'estado-box estado-incompleto';
                     }
+                    return;
                 }
                 
-                if (mediaSpan) {
-                    mediaSpan.textContent = media || '-';
-                    if (media >= 10) {
-                        mediaSpan.style.background = '#d4edda';
-                        mediaSpan.style.color = '#155724';
-                    } else if (media > 0) {
-                        mediaSpan.style.background = '#f8d7da';
-                        mediaSpan.style.color = '#721c24';
-                    } else {
-                        mediaSpan.style.background = '#f8f9fa';
-                        mediaSpan.style.color = '#6c757d';
+                if (valor >= 0 && valor <= 20) {
+                    input.classList.add('valida');
+                    input.classList.remove('invalida');
+                    
+                    var estado = valor >= 10 ? 'Aprovado' : 'Reprovado';
+                    var estadoIcone = estado == 'Aprovado' ? 'fa-check-circle' : 'fa-times-circle';
+                    var estadoClass = estado == 'Aprovado' ? 'estado-aprovado' : 'estado-reprovado';
+                    
+                    if (estadoSpan) {
+                        estadoSpan.innerHTML = '<i class="fas ' + estadoIcone + '"></i> ' + estado;
+                        estadoSpan.className = 'estado-box ' + estadoClass;
                     }
-                }
-                
-                if (estadoSpan) {
-                    estadoSpan.innerHTML = '<i class="fas ' + (estado == 'Aprovado' ? 'fa-check-circle' : (estado == 'Reprovado' ? 'fa-times-circle' : 'fa-hourglass-half')) + '"></i> ' + estado;
-                    estadoSpan.className = 'estado-box ' + 
-                        (estado == 'Aprovado' ? 'estado-aprovado' : 
-                         (estado == 'Reprovado' ? 'estado-reprovado' : 'estado-incompleto'));
-                }
-                
-                validarCampo(input);
-            }
-            
-            function validarCampo(campo) {
-                if (!campo) return;
-                var valor = parseFloat(campo.value);
-                if (campo.value === '') {
-                    campo.classList.remove('valida', 'invalida');
-                } else if (valor >= 0 && valor <= 20) {
-                    campo.classList.add('valida');
-                    campo.classList.remove('invalida');
                 } else {
-                    campo.classList.add('invalida');
-                    campo.classList.remove('valida');
+                    input.classList.add('invalida');
+                    input.classList.remove('valida');
+                    if (estadoSpan) {
+                        estadoSpan.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Inválida';
+                        estadoSpan.className = 'estado-box estado-incompleto';
+                    }
                 }
             }
             
