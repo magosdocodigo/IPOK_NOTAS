@@ -307,8 +307,8 @@ Este projeto está licenciado sob a **MIT License** – consulte o ficheiro `LIC
 
 ## ✨ Créditos
 
-Desenvolvido por: **Equipa IPOK**
+Desenvolvido por: **MAGOS DO CÓDIGO**
 
 🏫 Instituto Politécnico do Kituma (IPOK) – Angola  
-🛠️ Suporte técnico: Eminência Emanuel  
+🛠️ Suporte técnico: Magos do código 
 📅 Última atualização: Abril de 2026
