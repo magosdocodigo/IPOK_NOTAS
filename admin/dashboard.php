@@ -505,7 +505,7 @@ $page_title = "Dashboard Admin";
                                     <th>Email</th>
                                     <th>Nível</th>
                                     <th>Status</th>
-                                </tr>
+                                </td>
                             </thead>
                             <tbody>
                                 <?php if ($ultimos_usuarios && $ultimos_usuarios->num_rows > 0): ?>
@@ -577,7 +577,6 @@ $page_title = "Dashboard Admin";
                                             </span>
                                         </td>
                                         <td><?php echo htmlspecialchars($log['tabela']); ?></td>
-                                        
                                     </tr>
                                     <?php endwhile; ?>
                                 <?php else: ?>

@@ -51,8 +51,8 @@ switch ($tipo) {
         }
         $aluno = $resultado->fetch_assoc();
         
-        // Buscar notas do aluno
-        $query = "SELECT d.nome as disciplina, n.* 
+        // Buscar notas do aluno (nova estrutura: nota_trimestre)
+        $query = "SELECT d.nome as disciplina, n.nota_trimestre, n.trimestre, n.estado 
                   FROM notas n
                   INNER JOIN disciplinas d ON n.disciplina_id = d.id
                   WHERE n.aluno_id = $aluno_id AND n.ano_letivo = $ano_letivo";
@@ -81,8 +81,10 @@ switch ($tipo) {
         }
         $turma = $resultado->fetch_assoc();
         
-        // Buscar alunos da turma com notas
-        $query = "SELECT u.nome as aluno_nome, a.numero_matricula, d.nome as disciplina, n.*
+        // Buscar alunos da turma com notas (estrutura simplificada)
+        // Para cada aluno e disciplina, buscar nota_trimestre
+        $query = "SELECT u.nome as aluno_nome, a.numero_matricula, d.nome as disciplina, 
+                         n.nota_trimestre, n.trimestre, n.estado
                   FROM enturmacoes e
                   INNER JOIN alunos a ON e.aluno_id = a.id
                   INNER JOIN usuarios u ON a.usuario_id = u.id
@@ -116,8 +118,9 @@ switch ($tipo) {
         }
         $disciplina = $resultado->fetch_assoc();
         
-        // Buscar notas da disciplina
-        $query = "SELECT u.nome as aluno_nome, a.numero_matricula, t.nome as turma, n.*
+        // Buscar notas da disciplina (nova estrutura)
+        $query = "SELECT u.nome as aluno_nome, a.numero_matricula, t.nome as turma, 
+                         n.nota_trimestre, n.trimestre, n.estado
                   FROM notas n
                   INNER JOIN alunos a ON n.aluno_id = a.id
                   INNER JOIN usuarios u ON a.usuario_id = u.id
@@ -139,12 +142,12 @@ switch ($tipo) {
         
     case 'aproveitamento':
         $titulo = 'Aproveitamento Geral';
-        // Estatísticas por turma/disciplina
+        // Estatísticas por turma/disciplina usando nota_trimestre
         $query = "SELECT t.nome as turma, d.nome as disciplina,
                   COUNT(n.id) as total_notas,
                   SUM(CASE WHEN n.estado = 'Aprovado' THEN 1 ELSE 0 END) as aprovados,
                   SUM(CASE WHEN n.estado = 'Reprovado' THEN 1 ELSE 0 END) as reprovados,
-                  AVG(n.media_final) as media
+                  AVG(n.nota_trimestre) as media
                   FROM turmas t
                   CROSS JOIN turma_disciplina td ON t.id = td.turma_id
                   INNER JOIN disciplinas d ON td.disciplina_id = d.id
@@ -431,37 +434,28 @@ if ($formato === 'pdf') {
                     <tr>
                         <th>Disciplina</th>
                         <th>Trimestre</th>
-                        <th>AV1</th>
-                        <th>AV2</th>
-                        <th>MAC</th>
-                        <th>Exame</th>
-                        <th>Média Final</th>
+                        <th>Nota</th>
                         <th>Estado</th>
-                    </tr>
-                </thead>
+                     </thead>
                 <tbody>
                     <?php while ($nota = $notas->fetch_assoc()): ?>
                     <tr>
                         <td><?php echo htmlspecialchars($nota['disciplina']); ?></td>
-                        <td><?php echo $nota['trimestre']; ?>º Trim</td>
-                        <td><?php echo $nota['avaliacao1'] ?? '-'; ?></td>
-                        <td><?php echo $nota['avaliacao2'] ?? '-'; ?></td>
-                        <td><?php echo $nota['mac'] ?? '-'; ?></td>
-                        <td><?php echo $nota['exame'] ?? '-'; ?></td>
+                        <td><?php echo $nota['trimestre']; ?>º Trimestre</td>
                         <td>
-                            <?php if ($nota['media_final']): ?>
+                            <?php if ($nota['nota_trimestre'] !== null): ?>
                                 <span class="nota-badge 
                                     <?php 
-                                    if ($nota['media_final'] >= 14) echo 'nota-alta';
-                                    elseif ($nota['media_final'] >= 10) echo 'nota-media';
+                                    if ($nota['nota_trimestre'] >= 14) echo 'nota-alta';
+                                    elseif ($nota['nota_trimestre'] >= 10) echo 'nota-media';
                                     else echo 'nota-baixa';
                                     ?>">
-                                    <?php echo $nota['media_final']; ?>
+                                    <?php echo number_format($nota['nota_trimestre'], 1); ?>
                                 </span>
                             <?php else: ?>
                                 -
                             <?php endif; ?>
-                        </td>
+                         </td>
                         <td>
                             <?php if ($nota['estado']): ?>
                                 <span class="<?php echo $nota['estado'] === 'Aprovado' ? 'estado-aprovado' : 'estado-reprovado'; ?>">
@@ -470,11 +464,11 @@ if ($formato === 'pdf') {
                             <?php else: ?>
                                 <span class="text-muted">Incompleto</span>
                             <?php endif; ?>
-                        </td>
-                    </tr>
+                         </td>
+                     </tr>
                     <?php endwhile; ?>
                 </tbody>
-            </table>
+             </table>
             
         <?php elseif ($tipo === 'pauta'): ?>
             <h4 class="mb-3">Pauta da Turma <?php echo htmlspecialchars($turma['nome']); ?></h4>
@@ -484,14 +478,9 @@ if ($formato === 'pdf') {
                         <th>Aluno</th>
                         <th>Matrícula</th>
                         <th>Disciplina</th>
-                        <th>AV1</th>
-                        <th>AV2</th>
-                        <th>MAC</th>
-                        <th>Exame</th>
-                        <th>Média</th>
+                        <th>Nota</th>
                         <th>Estado</th>
-                    </tr>
-                </thead>
+                     </thead>
                 <tbody>
                     <?php 
                     $aluno_atual = '';
@@ -500,32 +489,41 @@ if ($formato === 'pdf') {
                             $aluno_atual = $linha['aluno_nome'];
                     ?>
                     <tr style="background: #f8f9fa;">
-                        <td colspan="9" class="fw-bold">
+                        <td colspan="5" class="fw-bold">
                             <?php echo htmlspecialchars($linha['aluno_nome']); ?> 
                             (<?php echo $linha['numero_matricula']; ?>)
-                        </td>
-                    </tr>
+                         </td>
+                     </tr>
                     <?php endif; ?>
                     <tr>
-                        <td></td>
-                        <td></td>
-                        <td><?php echo htmlspecialchars($linha['disciplina']); ?></td>
-                        <td><?php echo $linha['avaliacao1'] ?? '-'; ?></td>
-                        <td><?php echo $linha['avaliacao2'] ?? '-'; ?></td>
-                        <td><?php echo $linha['mac'] ?? '-'; ?></td>
-                        <td><?php echo $linha['exame'] ?? '-'; ?></td>
-                        <td><?php echo $linha['media_final'] ?? '-'; ?></td>
-                        <td>
+                         <td></td>
+                         <td></td>
+                         <td><?php echo htmlspecialchars($linha['disciplina']); ?></td>
+                         <td>
+                            <?php if ($linha['nota_trimestre'] !== null): ?>
+                                <span class="nota-badge 
+                                    <?php 
+                                    if ($linha['nota_trimestre'] >= 14) echo 'nota-alta';
+                                    elseif ($linha['nota_trimestre'] >= 10) echo 'nota-media';
+                                    else echo 'nota-baixa';
+                                    ?>">
+                                    <?php echo number_format($linha['nota_trimestre'], 1); ?>
+                                </span>
+                            <?php else: ?>
+                                -
+                            <?php endif; ?>
+                         </td>
+                         <td>
                             <?php if ($linha['estado']): ?>
                                 <span class="<?php echo $linha['estado'] === 'Aprovado' ? 'estado-aprovado' : 'estado-reprovado'; ?>">
                                     <?php echo $linha['estado']; ?>
                                 </span>
                             <?php endif; ?>
-                        </td>
-                    </tr>
+                         </td>
+                     </tr>
                     <?php endwhile; ?>
                 </tbody>
-            </table>
+             </table>
             
         <?php elseif ($tipo === 'disciplina'): ?>
             <h4 class="mb-3">Notas de <?php echo htmlspecialchars($disciplina['nome']); ?></h4>
@@ -536,37 +534,41 @@ if ($formato === 'pdf') {
                         <th>Matrícula</th>
                         <th>Turma</th>
                         <th>Trimestre</th>
-                        <th>AV1</th>
-                        <th>AV2</th>
-                        <th>MAC</th>
-                        <th>Exame</th>
-                        <th>Média</th>
+                        <th>Nota</th>
                         <th>Estado</th>
-                    </tr>
-                </thead>
+                     </thead>
                 <tbody>
                     <?php while ($nota = $notas->fetch_assoc()): ?>
                     <tr>
-                        <td><?php echo htmlspecialchars($nota['aluno_nome']); ?></td>
-                        <td><?php echo htmlspecialchars($nota['numero_matricula']); ?></td>
-                        <td><?php echo htmlspecialchars($nota['turma']); ?></td>
-                        <td><?php echo $nota['trimestre']; ?>º Trim</td>
-                        <td><?php echo $nota['avaliacao1'] ?? '-'; ?></td>
-                        <td><?php echo $nota['avaliacao2'] ?? '-'; ?></td>
-                        <td><?php echo $nota['mac'] ?? '-'; ?></td>
-                        <td><?php echo $nota['exame'] ?? '-'; ?></td>
-                        <td><?php echo $nota['media_final'] ?? '-'; ?></td>
-                        <td>
+                         <td><?php echo htmlspecialchars($nota['aluno_nome']); ?></td>
+                         <td><?php echo htmlspecialchars($nota['numero_matricula']); ?></td>
+                         <td><?php echo htmlspecialchars($nota['turma']); ?></td>
+                         <td><?php echo $nota['trimestre']; ?>º Trimestre</td>
+                         <td>
+                            <?php if ($nota['nota_trimestre'] !== null): ?>
+                                <span class="nota-badge 
+                                    <?php 
+                                    if ($nota['nota_trimestre'] >= 14) echo 'nota-alta';
+                                    elseif ($nota['nota_trimestre'] >= 10) echo 'nota-media';
+                                    else echo 'nota-baixa';
+                                    ?>">
+                                    <?php echo number_format($nota['nota_trimestre'], 1); ?>
+                                </span>
+                            <?php else: ?>
+                                -
+                            <?php endif; ?>
+                         </td>
+                         <td>
                             <?php if ($nota['estado']): ?>
                                 <span class="<?php echo $nota['estado'] === 'Aprovado' ? 'estado-aprovado' : 'estado-reprovado'; ?>">
                                     <?php echo $nota['estado']; ?>
                                 </span>
                             <?php endif; ?>
-                        </td>
-                    </tr>
+                         </td>
+                     </tr>
                     <?php endwhile; ?>
                 </tbody>
-            </table>
+             </table>
             
         <?php elseif ($tipo === 'aproveitamento'): ?>
             <h4 class="mb-3">Aproveitamento por Turma/Disciplina</h4>
@@ -580,32 +582,31 @@ if ($formato === 'pdf') {
                         <th>Reprovados</th>
                         <th>Média</th>
                         <th>Aproveitamento</th>
-                    </tr>
-                </thead>
+                     </thead>
                 <tbody>
                     <?php while ($est = $estatisticas->fetch_assoc()): 
                         $total = $est['aprovados'] + $est['reprovados'];
                         $taxa = $total > 0 ? round(($est['aprovados'] / $total) * 100, 1) : 0;
                     ?>
                     <tr>
-                        <td><?php echo htmlspecialchars($est['turma']); ?></td>
-                        <td><?php echo htmlspecialchars($est['disciplina']); ?></td>
-                        <td class="text-center"><?php echo $est['total_notas']; ?></td>
-                        <td class="text-success fw-bold"><?php echo $est['aprovados']; ?></td>
-                        <td class="text-danger fw-bold"><?php echo $est['reprovados']; ?></td>
-                        <td class="text-center"><?php echo round($est['media'] ?? 0, 1); ?></td>
-                        <td>
+                         <td><?php echo htmlspecialchars($est['turma']); ?></td>
+                         <td><?php echo htmlspecialchars($est['disciplina']); ?></td>
+                         <td class="text-center"><?php echo $est['total_notas']; ?></td>
+                         <td class="text-success fw-bold"><?php echo $est['aprovados']; ?></td>
+                         <td class="text-danger fw-bold"><?php echo $est['reprovados']; ?></td>
+                         <td class="text-center"><?php echo round($est['media'] ?? 0, 1); ?></td>
+                         <td>
                             <div class="progress" style="height: 20px;">
                                 <div class="progress-bar bg-success" 
                                      style="width: <?php echo $taxa; ?>%">
                                     <?php echo $taxa; ?>%
                                 </div>
                             </div>
-                        </td>
-                    </tr>
+                         </td>
+                     </tr>
                     <?php endwhile; ?>
                 </tbody>
-            </table>
+             </table>
         <?php endif; ?>
         
         <!-- Rodapé com ações -->

@@ -19,11 +19,14 @@ $result = $db->query($query);
 $aluno = $result->fetch_assoc();
 $aluno_id = $aluno['id'];
 
-// Buscar todo histórico do aluno (todas as notas de todos os anos)
-$query = "SELECT n.*, d.nome as disciplina, d.codigo as disciplina_codigo, t.nome as turma_nome
+// =============================================
+// HISTÓRICO SIMPLIFICADO (apenas nota_trimestre)
+// =============================================
+$query = "SELECT n.nota_trimestre, n.trimestre, n.ano_letivo, n.estado, 
+          d.nome as disciplina, d.codigo as disciplina_codigo, t.nome as turma_nome
           FROM notas n
           INNER JOIN disciplinas d ON n.disciplina_id = d.id
-          LEFT JOIN enturmacoes e ON n.aluno_id = e.aluno_id AND YEAR(n.ano_letivo) = YEAR(e.aluno_id)
+          LEFT JOIN enturmacoes e ON n.aluno_id = e.aluno_id AND n.ano_letivo = e.data_enturmacao
           LEFT JOIN turmas t ON e.turma_id = t.id
           WHERE n.aluno_id = $aluno_id
           ORDER BY n.ano_letivo DESC, n.trimestre ASC, d.nome ASC";
@@ -48,8 +51,8 @@ foreach ($historico_por_ano as $ano => $notas) {
     
     foreach ($notas as $n) {
         if ($n['estado'] == 'Aprovado') $aprovados++;
-        if ($n['media_final'] > 0) {
-            $soma_medias += $n['media_final'];
+        if ($n['nota_trimestre'] > 0) {
+            $soma_medias += $n['nota_trimestre'];
         }
     }
     
@@ -77,6 +80,7 @@ $page_title = "Histórico Escolar";
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <style>
+        /* (TODO O SEU CSS ORIGINAL PERMANECE EXATAMENTE IGUAL) */
         :root {
             --primary-blue: #1e3c72;
             --secondary-blue: #2a5298;
@@ -89,7 +93,6 @@ $page_title = "Histórico Escolar";
             overflow-x: hidden;
         }
         
-        /* Sidebar */
         .sidebar {
             position: fixed;
             top: 0;
@@ -151,7 +154,6 @@ $page_title = "Histórico Escolar";
         
         .sidebar-menu .menu-item i { width: 30px; font-size: 1.2rem; }
         
-        /* Main Content */
         .main-content {
             margin-left: var(--sidebar-width);
             padding: 20px;
@@ -161,7 +163,6 @@ $page_title = "Histórico Escolar";
         
         .main-content.sidebar-hidden { margin-left: 0; }
         
-        /* Top Navigation */
         .top-nav {
             background: white;
             padding: 15px 25px;
@@ -186,7 +187,6 @@ $page_title = "Histórico Escolar";
             font-weight: bold;
         }
         
-        /* Ano Cards */
         .ano-card {
             background: white;
             border-radius: 15px;
@@ -228,7 +228,6 @@ $page_title = "Histórico Escolar";
             font-size: 0.8rem;
         }
         
-        /* Stats Mini */
         .stats-mini {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
@@ -259,7 +258,6 @@ $page_title = "Histórico Escolar";
             letter-spacing: 0.5px;
         }
         
-        /* Trimestre Section */
         .trimestre-section {
             padding: 0 25px 20px 25px;
         }
@@ -276,7 +274,6 @@ $page_title = "Histórico Escolar";
             margin: 15px 0 10px 0;
         }
         
-        /* Tabela Moderna */
         .historico-table {
             width: 100%;
             border-collapse: collapse;
@@ -517,19 +514,15 @@ $page_title = "Histórico Escolar";
                             <thead>
                                 <tr>
                                     <th>Disciplina</th>
-                                    <th>Avaliação 1</th>
-                                    <th>Avaliação 2</th>
-                                    <th>Exame</th>
-                                    <th>Média</th>
+                                    <th>Nota do Trimestre</th>
                                     <th>Estado</th>
-                                </tr>
-                            </thead>
+                                 </thead>
                             <tbody>
                                 <?php foreach ($notas_por_trimestre[$t] as $nota): 
-                                    $media = $nota['media_final'] ?? 0;
+                                    $nota_valor = $nota['nota_trimestre'] ?? 0;
                                     $classe_nota = 'nota-media';
-                                    if ($media >= 14) $classe_nota = 'nota-alta';
-                                    elseif ($media < 10 && $media > 0) $classe_nota = 'nota-baixa';
+                                    if ($nota_valor >= 14) $classe_nota = 'nota-alta';
+                                    elseif ($nota_valor < 10 && $nota_valor > 0) $classe_nota = 'nota-baixa';
                                 ?>
                                 <tr>
                                     <td class="fw-500">
@@ -540,23 +533,8 @@ $page_title = "Histórico Escolar";
                                         <?php endif; ?>
                                     </td>
                                     <td>
-                                        <span class="nota-badge <?php echo ($nota['avaliacao1'] ?? 0) >= 10 ? 'nota-alta' : (($nota['avaliacao1'] ?? 0) > 0 ? 'nota-baixa' : ''); ?>">
-                                            <?php echo ($nota['avaliacao1'] ?? 0) ? number_format($nota['avaliacao1'], 1) : '-'; ?>
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <span class="nota-badge <?php echo ($nota['avaliacao2'] ?? 0) >= 10 ? 'nota-alta' : (($nota['avaliacao2'] ?? 0) > 0 ? 'nota-baixa' : ''); ?>">
-                                            <?php echo ($nota['avaliacao2'] ?? 0) ? number_format($nota['avaliacao2'], 1) : '-'; ?>
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <span class="nota-badge <?php echo ($nota['exame'] ?? 0) >= 10 ? 'nota-alta' : (($nota['exame'] ?? 0) > 0 ? 'nota-baixa' : ''); ?>">
-                                            <?php echo ($nota['exame'] ?? 0) ? number_format($nota['exame'], 1) : '-'; ?>
-                                        </span>
-                                    </td>
-                                    <td>
                                         <span class="nota-badge <?php echo $classe_nota; ?>">
-                                            <?php echo $media ? number_format($media, 1) : '-'; ?>
+                                            <?php echo $nota_valor ? number_format($nota_valor, 1) : '-'; ?>
                                         </span>
                                     </td>
                                     <td>

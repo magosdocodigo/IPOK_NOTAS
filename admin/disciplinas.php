@@ -26,7 +26,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             case 'edit':
                 $nome = mysqli_real_escape_string($db, $_POST['nome']);
                 $codigo = mysqli_real_escape_string($db, $_POST['codigo']);
-                $carga_horaria = !empty($_POST['carga_horaria']) ? (int)$_POST['carga_horaria'] : 'NULL';
                 
                 // Dados opcionais de vinculação
                 $turma_id = !empty($_POST['turma_id']) ? (int)$_POST['turma_id'] : null;
@@ -43,8 +42,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                     }
                     
-                    $query = "INSERT INTO disciplinas (nome, codigo, carga_horaria) 
-                              VALUES ('$nome', " . ($codigo ? "'$codigo'" : "NULL") . ", $carga_horaria)";
+                    $query = "INSERT INTO disciplinas (nome, codigo) 
+                              VALUES ('$nome', " . ($codigo ? "'$codigo'" : "NULL") . ")";
                     
                     if ($db->query($query)) {
                         $disciplina_id = $db->insert_id;
@@ -63,7 +62,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 
                                 // Se também foi selecionado professor e ano letivo, atribuir
                                 if ($professor_id && $ano_letivo) {
-                                    // Verificar se já existe atribuição para essa combinação
                                     $check_atr = $db->query("SELECT id FROM atribuicoes WHERE turma_disciplina_id = $turma_disciplina_id AND professor_id = $professor_id AND ano_letivo = $ano_letivo");
                                     if ($check_atr->num_rows == 0) {
                                         $db->query("INSERT INTO atribuicoes (turma_disciplina_id, professor_id, ano_letivo) VALUES ($turma_disciplina_id, $professor_id, $ano_letivo)");
@@ -72,7 +70,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     }
                                 }
                             } elseif ($professor_id && $ano_letivo) {
-                                // Se já existia o vínculo turma-disciplina, tenta atribuir professor
                                 $turma_disciplina_id = $check_td->fetch_assoc()['id'];
                                 $check_atr = $db->query("SELECT id FROM atribuicoes WHERE turma_disciplina_id = $turma_disciplina_id AND professor_id = $professor_id AND ano_letivo = $ano_letivo");
                                 if ($check_atr->num_rows == 0) {
@@ -104,8 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     $query = "UPDATE disciplinas SET 
                               nome = '$nome',
-                              codigo = " . ($codigo ? "'$codigo'" : "NULL") . ",
-                              carga_horaria = $carga_horaria
+                              codigo = " . ($codigo ? "'$codigo'" : "NULL") . "
                               WHERE id = $id";
                     
                     if ($db->query($query)) {
@@ -115,13 +111,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         
                         // Vinculação opcional: turma e professor (adicionar novos vínculos sem remover os existentes)
                         if ($turma_id) {
-                            // Verificar se já existe vínculo turma-disciplina
                             $check_td = $db->query("SELECT id FROM turma_disciplina WHERE turma_id = $turma_id AND disciplina_id = $id");
                             if ($check_td->num_rows == 0) {
                                 $db->query("INSERT INTO turma_disciplina (turma_id, disciplina_id) VALUES ($turma_id, $id)");
                                 $turma_disciplina_id = $db->insert_id;
                                 
-                                // Se também foi selecionado professor e ano letivo, atribuir
                                 if ($professor_id && $ano_letivo) {
                                     $check_atr = $db->query("SELECT id FROM atribuicoes WHERE turma_disciplina_id = $turma_disciplina_id AND professor_id = $professor_id AND ano_letivo = $ano_letivo");
                                     if ($check_atr->num_rows == 0) {
@@ -179,7 +173,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Buscar disciplinas com estatísticas
+// Buscar disciplinas com estatísticas (sem carga_horaria)
 $query = "SELECT d.*,
           COUNT(DISTINCT td.turma_id) as total_turmas,
           COUNT(DISTINCT n.id) as total_notas_lancadas,
@@ -200,7 +194,6 @@ if (isset($_GET['edit'])) {
     $result = $db->query($query);
     $edit_disciplina = $result->fetch_assoc();
     
-    // Adicionar estatísticas para edição
     if ($edit_disciplina) {
         $stats = $db->query("SELECT 
                             (SELECT COUNT(*) FROM turma_disciplina WHERE disciplina_id = $id) as turmas,
@@ -231,28 +224,17 @@ while ($prof = $professores_result->fetch_assoc()) {
     $professores_list[] = $prof;
 }
 
-// Buscar anos letivos disponíveis (em vez de períodos com nome)
+// Buscar anos letivos disponíveis
 $anos_letivos = [];
 $anos_result = $db->query("SELECT DISTINCT ano_letivo FROM periodos ORDER BY ano_letivo DESC");
 while ($ano = $anos_result->fetch_assoc()) {
     $anos_letivos[] = $ano['ano_letivo'];
 }
 
-// Estatísticas gerais
-$stats_query = "SELECT 
-                COUNT(*) as total_disciplinas,
-                SUM(CASE WHEN carga_horaria IS NOT NULL THEN 1 ELSE 0 END) as com_carga,
-                AVG(carga_horaria) as media_carga
-                FROM disciplinas";
+// Estatísticas gerais (sem carga horária)
+$stats_query = "SELECT COUNT(*) as total_disciplinas FROM disciplinas";
 $stats_result = $db->query($stats_query);
 $stats = $stats_result->fetch_assoc();
-
-// Buscar cargas horárias únicas para filtro
-$cargas = [];
-$cargas_query = $db->query("SELECT DISTINCT carga_horaria FROM disciplinas WHERE carga_horaria IS NOT NULL ORDER BY carga_horaria");
-while ($carga = $cargas_query->fetch_assoc()) {
-    $cargas[] = $carga['carga_horaria'];
-}
 
 $page_title = "Gestão de Disciplinas";
 ?>
@@ -556,11 +538,6 @@ $page_title = "Gestão de Disciplinas";
             color: #084298;
         }
         
-        .badge-carga {
-            background: #e2e3e5;
-            color: #495057;
-        }
-        
         .badge-turmas {
             background: #d1fae5;
             color: #065f46;
@@ -676,7 +653,7 @@ $page_title = "Gestão de Disciplinas";
     </style>
 </head>
 <body>
-    <!-- Sidebar (mesmo conteúdo) -->
+    <!-- Sidebar -->
     <div class="sidebar">
         <div class="sidebar-header">
             <div class="logo">
@@ -762,15 +739,12 @@ $page_title = "Gestão de Disciplinas";
             </div>
         </div>
         
-        <!-- Filter Section -->
+        <!-- Filter Section (simplificada, sem carga horária) -->
         <div class="filter-section">
             <!-- Filtros em Pílulas -->
             <div class="filter-pills">
                 <button class="filter-pill active" data-filter="all" onclick="filterByType('all')">
                     <i class="fas fa-book"></i> Todas Disciplinas
-                </button>
-                <button class="filter-pill" data-filter="carga" onclick="filterByCarga()">
-                    <i class="fas fa-clock"></i> Por Carga Horária
                 </button>
                 <button class="filter-pill" data-filter="turmas" onclick="filterByTurmas()">
                     <i class="fas fa-chalkboard"></i> Com Turmas
@@ -787,19 +761,6 @@ $page_title = "Gestão de Disciplinas";
                         <input type="text" class="form-control" id="searchInput" 
                                placeholder="Nome da disciplina, código...">
                     </div>
-                </div>
-                
-                <div class="col-md-3" id="filterCargaContainer" style="display: none;">
-                    <label class="form-label text-muted small mb-2">
-                        <i class="fas fa-clock me-1"></i>Carga Horária
-                    </label>
-                    <select class="form-select" id="filterCarga">
-                        <option value="">Todas</option>
-                        <?php foreach ($cargas as $carga): ?>
-                            <option value="<?php echo $carga; ?>"><?php echo $carga; ?> horas</option>
-                        <?php endforeach; ?>
-                        <option value="sem">Sem carga horária</option>
-                    </select>
                 </div>
                 
                 <div class="col-md-2" id="filterTurmasContainer" style="display: none;">
@@ -836,7 +797,7 @@ $page_title = "Gestão de Disciplinas";
         </div>
         <?php endif; ?>
         
-        <!-- Stats Cards -->
+        <!-- Stats Cards (sem carga horária) -->
         <div class="stats-grid">
             <div class="stat-card">
                 <div class="stat-icon">
@@ -845,24 +806,6 @@ $page_title = "Gestão de Disciplinas";
                 <div class="stat-content">
                     <h3><?php echo $stats['total_disciplinas']; ?></h3>
                     <p>Total de Disciplinas</p>
-                </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon">
-                    <i class="fas fa-clock"></i>
-                </div>
-                <div class="stat-content">
-                    <h3><?php echo $stats['com_carga']; ?></h3>
-                    <p>Com Carga Horária</p>
-                </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon">
-                    <i class="fas fa-chart-line"></i>
-                </div>
-                <div class="stat-content">
-                    <h3><?php echo round($stats['media_carga'] ?? 0); ?>h</h3>
-                    <p>Média Carga Horária</p>
                 </div>
             </div>
             <div class="stat-card">
@@ -892,7 +835,6 @@ $page_title = "Gestão de Disciplinas";
                             <th style="width: 60px;">#ID</th>
                             <th>Disciplina</th>
                             <th>Código</th>
-                            <th>Carga Horária</th>
                             <th>Turmas</th>
                             <th>Professores</th>
                             <th>Notas</th>
@@ -908,7 +850,6 @@ $page_title = "Gestão de Disciplinas";
                         <tr data-id="<?php echo $disciplina['id']; ?>"
                             data-nome="<?php echo strtolower($disciplina['nome']); ?>"
                             data-codigo="<?php echo strtolower($disciplina['codigo'] ?? ''); ?>"
-                            data-carga="<?php echo $disciplina['carga_horaria']; ?>"
                             data-turmas="<?php echo $disciplina['total_turmas']; ?>">
                             <td>
                                 <span class="badge bg-light text-dark">#<?php echo $disciplina['id']; ?></span>
@@ -934,16 +875,6 @@ $page_title = "Gestão de Disciplinas";
                                 <?php endif; ?>
                             </td>
                             <td>
-                                <?php if ($disciplina['carga_horaria']): ?>
-                                <span class="badge-status badge-carga">
-                                    <i class="fas fa-clock me-1"></i>
-                                    <?php echo $disciplina['carga_horaria']; ?>h
-                                </span>
-                                <?php else: ?>
-                                <span class="text-muted">---</span>
-                                <?php endif; ?>
-                            </td>
-                            <td>
                                 <span class="badge-status badge-turmas">
                                     <i class="fas fa-chalkboard me-1"></i>
                                     <?php echo (int)$disciplina['total_turmas']; ?> turmas
@@ -963,7 +894,7 @@ $page_title = "Gestão de Disciplinas";
                             </td>
                             <td>
                                 <div class="action-buttons">
-                                    <button class="btn btn-sm btn-info" onclick="viewDetails(<?php echo $disciplina['id']; ?>, '<?php echo addslashes($disciplina['nome']); ?>', '<?php echo addslashes($disciplina['codigo'] ?? ''); ?>', '<?php echo $disciplina['carga_horaria'] ?? 'Não definida'; ?>', '<?php echo (int)$disciplina['total_turmas']; ?>', '<?php echo (int)$disciplina['total_professores']; ?>', '<?php echo (int)$disciplina['total_notas_lancadas']; ?>')" data-bs-toggle="tooltip" title="Ver Detalhes">
+                                    <button class="btn btn-sm btn-info" onclick="viewDetails(<?php echo $disciplina['id']; ?>, '<?php echo addslashes($disciplina['nome']); ?>', '<?php echo addslashes($disciplina['codigo'] ?? ''); ?>', '<?php echo (int)$disciplina['total_turmas']; ?>', '<?php echo (int)$disciplina['total_professores']; ?>', '<?php echo (int)$disciplina['total_notas_lancadas']; ?>')" data-bs-toggle="tooltip" title="Ver Detalhes">
                                         <i class="fas fa-eye"></i> Detalhes
                                     </button>
                                     
@@ -996,7 +927,7 @@ $page_title = "Gestão de Disciplinas";
         </div>
     </div>
     
-    <!-- Modal de Detalhes da Disciplina -->
+    <!-- Modal de Detalhes da Disciplina (sem carga horária) -->
     <div class="modal fade" id="detailsModal" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content" style="border-radius: 20px; overflow: hidden;">
@@ -1033,20 +964,12 @@ $page_title = "Gestão de Disciplinas";
                         <div class="col-md-6">
                             <div class="detail-card">
                                 <div class="detail-label">
-                                    <i class="fas fa-clock me-1"></i> Carga Horária
-                                </div>
-                                <div class="detail-value" id="detailCarga">---</div>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="detail-card">
-                                <div class="detail-label">
                                     <i class="fas fa-chalkboard me-1"></i> Turmas Vinculadas
                                 </div>
                                 <div class="detail-value" id="detailTurmas">---</div>
                             </div>
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-6">
                             <div class="detail-card">
                                 <div class="detail-label">
                                     <i class="fas fa-user-tie me-1"></i> Professores
@@ -1054,7 +977,7 @@ $page_title = "Gestão de Disciplinas";
                                 <div class="detail-value" id="detailProfessores">---</div>
                             </div>
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-6">
                             <div class="detail-card">
                                 <div class="detail-label">
                                     <i class="fas fa-file-alt me-1"></i> Notas Lançadas
@@ -1074,7 +997,7 @@ $page_title = "Gestão de Disciplinas";
         </div>
     </div>
     
-    <!-- Disciplina Modal (Create/Edit) com vinculação opcional de turma e professor -->
+    <!-- Disciplina Modal (Create/Edit) sem carga horária -->
     <div class="modal fade" id="disciplinaModal" tabindex="-1" <?php if($edit_disciplina) echo 'data-show="true"'; ?>>
         <div class="modal-dialog">
             <div class="modal-content" style="border-radius: 20px; overflow: hidden;">
@@ -1105,14 +1028,6 @@ $page_title = "Gestão de Disciplinas";
                                    value="<?php echo $edit_disciplina ? htmlspecialchars($edit_disciplina['codigo'] ?? '') : ''; ?>" 
                                    placeholder="Ex: MAT101, PORT202, FIS303...">
                             <small class="text-muted">Código único da disciplina (opcional)</small>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label class="form-label">Carga Horária (horas)</label>
-                            <input type="number" class="form-control" name="carga_horaria" 
-                                   value="<?php echo $edit_disciplina ? htmlspecialchars($edit_disciplina['carga_horaria'] ?? '') : ''; ?>" 
-                                   placeholder="Ex: 60, 80, 120..." min="0" step="1">
-                            <small class="text-muted">Carga horária total da disciplina (opcional)</small>
                         </div>
                         
                         <!-- Seção de vinculação opcional -->
@@ -1197,29 +1112,22 @@ $page_title = "Gestão de Disciplinas";
         function filterByType(type) {
             currentFilter = type;
             
-            // Atualizar classes dos botões
             document.querySelectorAll('.filter-pill').forEach(pill => {
                 pill.classList.remove('active');
             });
             document.querySelector(`.filter-pill[data-filter="${type}"]`).classList.add('active');
             
-            // Mostrar/esconder containers de filtro
-            document.getElementById('filterCargaContainer').style.display = type === 'carga' ? 'block' : 'none';
             document.getElementById('filterTurmasContainer').style.display = type === 'turmas' ? 'block' : 'none';
             
-            // Limpar valores dos filtros
-            if (type !== 'carga') document.getElementById('filterCarga').value = '';
             if (type !== 'turmas') document.getElementById('filterTurmas').value = '';
             
             aplicarFiltros();
         }
         
-        function filterByCarga() { filterByType('carga'); }
         function filterByTurmas() { filterByType('turmas'); }
         
         function aplicarFiltros() {
             const searchTerm = document.getElementById('searchInput').value.toLowerCase().trim();
-            const cargaFilter = document.getElementById('filterCarga').value;
             const turmasFilter = document.getElementById('filterTurmas').value;
             const rows = document.querySelectorAll('#disciplinasTable tbody tr');
             let visibleCount = 0;
@@ -1228,26 +1136,14 @@ $page_title = "Gestão de Disciplinas";
             rows.forEach(row => {
                 const nome = row.getAttribute('data-nome') || '';
                 const codigo = row.getAttribute('data-codigo') || '';
-                const carga = row.getAttribute('data-carga');
                 const turmas = parseInt(row.getAttribute('data-turmas')) || 0;
                 
                 let match = true;
                 
-                // Filtro de pesquisa
                 if (searchTerm && !nome.includes(searchTerm) && !codigo.includes(searchTerm)) {
                     match = false;
                 }
                 
-                // Filtro de carga horária
-                if (match && currentFilter === 'carga') {
-                    if (cargaFilter === 'sem' && carga) {
-                        match = false;
-                    } else if (cargaFilter !== 'sem' && cargaFilter !== '' && carga != cargaFilter) {
-                        match = false;
-                    }
-                }
-                
-                // Filtro de turmas
                 if (match && currentFilter === 'turmas') {
                     if (turmasFilter === 'com' && turmas === 0) {
                         match = false;
@@ -1271,33 +1167,27 @@ $page_title = "Gestão de Disciplinas";
         
         // Event listeners
         document.getElementById('searchInput').addEventListener('keyup', aplicarFiltros);
-        document.getElementById('filterCarga').addEventListener('change', aplicarFiltros);
         document.getElementById('filterTurmas').addEventListener('change', aplicarFiltros);
         
         // Função para visualizar detalhes
         let currentDisciplinaId = null;
         
-        function viewDetails(id, nome, codigo, carga, turmas, professores, notas) {
+        function viewDetails(id, nome, codigo, turmas, professores, notas) {
             currentDisciplinaId = id;
             
-            // Atualizar avatar
             const iniciais = nome.substring(0, 2).toUpperCase();
             document.getElementById('detailIniciais').textContent = iniciais;
             
-            // Atualizar dados
             document.getElementById('detailNome').textContent = nome;
             document.getElementById('detailCodigo').textContent = codigo || 'Não definido';
-            document.getElementById('detailCarga').textContent = carga;
             document.getElementById('detailTurmas').textContent = turmas;
             document.getElementById('detailProfessores').textContent = professores;
             document.getElementById('detailNotas').textContent = notas;
             
-            // Botão de editar
             document.getElementById('btnEditFromDetails').onclick = function() {
                 window.location.href = '?edit=' + currentDisciplinaId;
             };
             
-            // Mostrar modal
             new bootstrap.Modal(document.getElementById('detailsModal')).show();
         }
         
@@ -1316,21 +1206,19 @@ $page_title = "Gestão de Disciplinas";
                 professorAnoGroup.style.display = 'block';
             } else {
                 professorAnoGroup.style.display = 'none';
-                // Limpar selects de professor e ano letivo
                 document.getElementById('professorSelect').value = '';
                 document.getElementById('anoLetivoSelect').value = '';
             }
         }
         
         turmaSelect.addEventListener('change', toggleProfessorAno);
-        toggleProfessorAno(); // chamada inicial
+        toggleProfessorAno();
         
-        // Mostrar modal de edição se existir
         <?php if($edit_disciplina): ?>
         var disciplinaModal = new bootstrap.Modal(document.getElementById('disciplinaModal'));
         disciplinaModal.show();
         <?php endif; ?>
-        a
+        
         // Animações de entrada
         document.addEventListener('DOMContentLoaded', function() {
             const rows = document.querySelectorAll('#disciplinasTable tbody tr');
@@ -1344,7 +1232,6 @@ $page_title = "Gestão de Disciplinas";
                 }, index * 50);
             });
             
-            // Calcular estatística de disciplinas com turmas
             let comTurmas = 0;
             rows.forEach(row => {
                 const turmas = parseInt(row.getAttribute('data-turmas')) || 0;

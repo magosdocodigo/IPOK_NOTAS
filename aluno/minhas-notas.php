@@ -19,21 +19,15 @@ $result = $db->query($query);
 $aluno = $result->fetch_assoc();
 $aluno_id = $aluno['id'];
 
-// Buscar informações da turma atual do aluno
-$query = "SELECT t.id, t.nome as turma_nome, t.ano_letivo, t.curso,
-          CASE 
-              WHEN t.curso LIKE '%13ª%' OR t.nome LIKE '%13ª%' THEN 'terminal'
-              ELSE 'trimestral'
-          END as tipo_avaliacao_turma
+// Buscar informações da turma atual do aluno (apenas para exibição)
+$query = "SELECT t.id, t.nome as turma_nome, t.ano_letivo, t.curso
           FROM enturmacoes e
           INNER JOIN turmas t ON e.turma_id = t.id
           WHERE e.aluno_id = $aluno_id AND t.ano_letivo = YEAR(CURDATE())
           LIMIT 1";
 $turma_atual = $db->query($query)->fetch_assoc();
-$is_terminal = $turma_atual && $turma_atual['tipo_avaliacao_turma'] === 'terminal';
 
-
-//Filtros
+// Filtros
 $ano_selecionado = isset($_GET['ano']) ? (int)$_GET['ano'] : date('Y');
 $trimestre_selecionado = isset($_GET['trimestre']) ? (int)$_GET['trimestre'] : 0;
 
@@ -41,8 +35,10 @@ $trimestre_selecionado = isset($_GET['trimestre']) ? (int)$_GET['trimestre'] : 0
 $query = "SELECT DISTINCT n.ano_letivo FROM notas n WHERE n.aluno_id = $aluno_id ORDER BY n.ano_letivo DESC";
 $anos = $db->query($query);
 
-// Buscar notas com filtros
-$query = "SELECT n.*, d.nome as disciplina, d.codigo as disciplina_codigo FROM notas n 
+// Buscar notas com filtros (estrutura simplificada: apenas nota_trimestre)
+$query = "SELECT n.nota_trimestre, n.trimestre, n.ano_letivo, n.estado,
+          d.nome as disciplina, d.codigo as disciplina_codigo 
+          FROM notas n 
           INNER JOIN disciplinas d ON n.disciplina_id = d.id
           WHERE n.aluno_id = $aluno_id";
 if ($ano_selecionado) {
@@ -72,14 +68,14 @@ while ($nota = $notas->fetch_assoc()) {
     $notas_agrupadas[$chave]['disciplinas'][] = $nota;
 }
 
-// Calcular médias por trimestre
+// Calcular médias por trimestre (usando nota_trimestre)
 $medias_trimestre = [];
 foreach ($notas_agrupadas as $grupo) {
     $soma = 0;
     $count = 0;
     foreach ($grupo['disciplinas'] as $nota) {
-        if ($nota['media_final'] !== null && $nota['media_final'] > 0) {
-            $soma += $nota['media_final'];
+        if ($nota['nota_trimestre'] !== null && $nota['nota_trimestre'] > 0) {
+            $soma += $nota['nota_trimestre'];
             $count++;
         }
     }
@@ -116,6 +112,7 @@ $page_title = "Minhas Notas";
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
     <style>
+        /* (TODO O SEU CSS ORIGINAL PERMANECE EXATAMENTE IGUAL) */
         :root {
             --primary-blue: #1e3c72;
             --secondary-blue: #2a5298;
@@ -128,7 +125,6 @@ $page_title = "Minhas Notas";
             overflow-x: hidden;
         }
 
-        /* Sidebar */
         .sidebar {
             position: fixed;
             top: 0;
@@ -198,7 +194,6 @@ $page_title = "Minhas Notas";
             font-size: 1.2rem;
         }
 
-        /* Main Content */
         .main-content {
             margin-left: var(--sidebar-width);
             padding: 20px;
@@ -210,7 +205,6 @@ $page_title = "Minhas Notas";
             margin-left: 0;
         }
 
-        /* Top Navigation */
         .top-nav {
             background: white;
             padding: 15px 25px;
@@ -241,7 +235,6 @@ $page_title = "Minhas Notas";
             font-weight: bold;
         }
 
-        /* Stats Cards */
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -284,7 +277,6 @@ $page_title = "Minhas Notas";
             font-size: 0.85rem;
         }
 
-        /* Filtros */
         .filter-section {
             background: white;
             border-radius: 15px;
@@ -293,7 +285,6 @@ $page_title = "Minhas Notas";
             box-shadow: 0 5px 20px rgba(0, 0, 0, .05);
         }
 
-        /* Cards de Trimestre */
         .trimestre-card {
             background: white;
             border-radius: 15px;
@@ -378,15 +369,6 @@ $page_title = "Minhas Notas";
             margin-bottom: 20px;
         }
 
-        .badge-terminal {
-            background: #ffc107;
-            color: #856404;
-            padding: 5px 10px;
-            border-radius: 20px;
-            font-size: .7rem;
-            font-weight: 600;
-        }
-
         .legenda-box {
             background: #f8f9fa;
             border-radius: 8px;
@@ -399,16 +381,13 @@ $page_title = "Minhas Notas";
             .sidebar {
                 transform: translateX(-100%);
             }
-
             .main-content {
                 margin-left: 0;
             }
-
             .disciplina-row {
                 flex-wrap: wrap;
                 gap: 10px;
             }
-
             .disciplina-nome {
                 flex: 100%;
             }
@@ -525,12 +504,11 @@ $page_title = "Minhas Notas";
             <strong>Regra de Negócio (RN07):</strong> Você está visualizando apenas notas de períodos já fechados pela secretaria.
         </div>
 
-        <!-- Legenda do Sistema de Avaliação -->
+        <!-- Legenda do Sistema de Avaliação (simplificada) -->
         <div class="legenda-box">
             <i class="fas fa-info-circle text-primary me-2"></i>
             <strong>Sistema de Avaliação:</strong>
-            <span class="ms-3"><i class="fas fa-calculator me-1"></i> MAC = (Avaliação 1 + Avaliação 2) / 2</span>
-            <span class="ms-3"><i class="fas fa-calculator me-1"></i> Média Final = (MAC + Exame) / 2</span>
+            <span class="ms-3"><i class="fas fa-calculator me-1"></i> Nota única por trimestre</span>
             <span class="ms-3"><i class="fas fa-chart-line text-success me-1"></i> Aprovado: ≥ 10 | Reprovado: < 10</span>
         </div>
 
@@ -591,18 +569,15 @@ $page_title = "Minhas Notas";
 
                     <div class="disciplina-row fw-bold text-muted" style="background: #f8fafc; border-bottom: 2px solid #e9ecef;">
                         <div class="disciplina-nome">Disciplina</div>
-                        <div class="disciplina-nota">Avaliação 1</div>
-                        <div class="disciplina-nota">Avaliação 2</div>
-                        <div class="disciplina-nota">Exame</div>
-                        <div class="disciplina-nota">Média</div>
+                        <div class="disciplina-nota">Nota do Trimestre</div>
                         <div class="disciplina-detalhe">Estado</div>
                     </div>
 
                     <?php foreach ($grupo['disciplinas'] as $nota):
-                        $media = $nota['media_final'] ?? 0;
+                        $nota_valor = $nota['nota_trimestre'] ?? 0;
                         $classe_nota = 'nota-media';
-                        if ($media >= 14) $classe_nota = 'nota-alta';
-                        elseif ($media < 10) $classe_nota = 'nota-baixa';
+                        if ($nota_valor >= 14) $classe_nota = 'nota-alta';
+                        elseif ($nota_valor < 10 && $nota_valor > 0) $classe_nota = 'nota-baixa';
                     ?>
                         <div class="disciplina-row">
                             <div class="disciplina-nome">
@@ -614,24 +589,8 @@ $page_title = "Minhas Notas";
                             </div>
 
                             <div class="disciplina-nota">
-                                <span class="nota-badge <?php echo ($nota['avaliacao1'] ?? 0) >= 10 ? 'nota-alta' : (($nota['avaliacao1'] ?? 0) > 0 ? 'nota-baixa' : ''); ?>">
-                                    <?php echo ($nota['avaliacao1'] ?? 0) ? number_format($nota['avaliacao1'], 1) : '-'; ?>
-                                </span>
-                            </div>
-                            <div class="disciplina-nota">
-                                <span class="nota-badge <?php echo ($nota['avaliacao2'] ?? 0) >= 10 ? 'nota-alta' : (($nota['avaliacao2'] ?? 0) > 0 ? 'nota-baixa' : ''); ?>">
-                                    <?php echo ($nota['avaliacao2'] ?? 0) ? number_format($nota['avaliacao2'], 1) : '-'; ?>
-                                </span>
-                            </div>
-                            <div class="disciplina-nota">
-                                <span class="nota-badge <?php echo ($nota['exame'] ?? 0) >= 10 ? 'nota-alta' : (($nota['exame'] ?? 0) > 0 ? 'nota-baixa' : ''); ?>">
-                                    <?php echo ($nota['exame'] ?? 0) ? number_format($nota['exame'], 1) : '-'; ?>
-                                </span>
-                            </div>
-
-                            <div class="disciplina-nota">
                                 <span class="nota-badge <?php echo $classe_nota; ?>">
-                                    <?php echo $media ? number_format($media, 1) : '-'; ?>
+                                    <?php echo $nota_valor ? number_format($nota_valor, 1) : '-'; ?>
                                 </span>
                             </div>
 

@@ -19,13 +19,14 @@ $result = $db->query($query);
 $aluno = $result->fetch_assoc();
 $aluno_id = $aluno['id'];
 
-// Estatísticas do aluno
-$stats = [];
+// =============================================
+// ESTATÍSTICAS DO ALUNO (adaptado para nota_trimestre)
+// =============================================
 
-// Média geral (apenas períodos com todas as avaliações)
-$query = "SELECT AVG(n.media_final) as media_geral 
+// Média geral (apenas notas lançadas)
+$query = "SELECT AVG(n.nota_trimestre) as media_geral 
           FROM notas n
-          WHERE n.aluno_id = $aluno_id AND n.media_final IS NOT NULL";
+          WHERE n.aluno_id = $aluno_id AND n.nota_trimestre IS NOT NULL";
 $result = $db->query($query);
 $stats['media_geral'] = round($result->fetch_assoc()['media_geral'] ?? 0, 1);
 
@@ -55,8 +56,11 @@ $stats['aprovados'] = $row['aprovados'] ?? 0;
 $stats['total_notas'] = $row['total'] ?? 0;
 $stats['aproveitamento'] = $stats['total_notas'] > 0 ? round(($stats['aprovados'] / $stats['total_notas']) * 100, 1) : 0;
 
-// Últimas notas lançadas
-$query = "SELECT n.*, d.nome as disciplina, d.codigo as disciplina_codigo
+// =============================================
+// ÚLTIMAS NOTAS (apenas nota_trimestre)
+// =============================================
+$query = "SELECT n.nota_trimestre, n.trimestre, n.ano_letivo, n.estado, 
+          d.nome as disciplina, d.codigo as disciplina_codigo
           FROM notas n
           INNER JOIN disciplinas d ON n.disciplina_id = d.id
           WHERE n.aluno_id = $aluno_id
@@ -64,44 +68,43 @@ $query = "SELECT n.*, d.nome as disciplina, d.codigo as disciplina_codigo
           LIMIT 10";
 $ultimas_notas = $db->query($query);
 
-// Informações da turma atual
-$query = "SELECT t.id, t.nome as turma_nome, t.ano_letivo, t.curso,
-          CASE 
-              WHEN t.curso LIKE '%13ª%' OR t.nome LIKE '%13ª%' THEN 'terminal'
-              ELSE 'trimestral'
-          END as tipo_avaliacao_turma
+// =============================================
+// INFORMAÇÕES DA TURMA ATUAL (simplificado)
+// =============================================
+$query = "SELECT t.id, t.nome as turma_nome, t.ano_letivo, t.curso
           FROM enturmacoes e
           INNER JOIN turmas t ON e.turma_id = t.id
           WHERE e.aluno_id = $aluno_id AND t.ano_letivo = YEAR(CURDATE())
           LIMIT 1";
 $turma_atual = $db->query($query)->fetch_assoc();
 
-// Verificar se o aluno está na 13ª classe
-$is_terminal = $turma_atual && $turma_atual['tipo_avaliacao_turma'] === 'terminal';
-
-// Notas por trimestre (para gráfico de evolução)
+// =============================================
+// NOTAS POR TRIMESTRE (EVOLUÇÃO)
+// =============================================
 $evolucao = [];
 for ($tri = 1; $tri <= 3; $tri++) {
-    $query = "SELECT AVG(n.media_final) as media 
+    $query = "SELECT AVG(n.nota_trimestre) as media 
               FROM notas n
-              WHERE n.aluno_id = $aluno_id AND n.trimestre = $tri AND n.media_final IS NOT NULL";
+              WHERE n.aluno_id = $aluno_id AND n.trimestre = $tri AND n.nota_trimestre IS NOT NULL";
     $result = $db->query($query);
     $evolucao[$tri] = round($result->fetch_assoc()['media'] ?? 0, 1);
 }
 
-// Melhor e pior disciplina
-$query = "SELECT d.nome as disciplina, n.media_final 
+// =============================================
+// MELHOR E PIOR DISCIPLINA
+// =============================================
+$query = "SELECT d.nome as disciplina, n.nota_trimestre as media_final 
           FROM notas n
           INNER JOIN disciplinas d ON n.disciplina_id = d.id
-          WHERE n.aluno_id = $aluno_id AND n.media_final IS NOT NULL
-          ORDER BY n.media_final DESC LIMIT 1";
+          WHERE n.aluno_id = $aluno_id AND n.nota_trimestre IS NOT NULL
+          ORDER BY n.nota_trimestre DESC LIMIT 1";
 $melhor = $db->query($query)->fetch_assoc();
 
-$query = "SELECT d.nome as disciplina, n.media_final 
+$query = "SELECT d.nome as disciplina, n.nota_trimestre as media_final 
           FROM notas n
           INNER JOIN disciplinas d ON n.disciplina_id = d.id
-          WHERE n.aluno_id = $aluno_id AND n.media_final IS NOT NULL
-          ORDER BY n.media_final ASC LIMIT 1";
+          WHERE n.aluno_id = $aluno_id AND n.nota_trimestre IS NOT NULL
+          ORDER BY n.nota_trimestre ASC LIMIT 1";
 $pior = $db->query($query)->fetch_assoc();
 
 $page_title = "Meu Dashboard";
@@ -123,6 +126,7 @@ $page_title = "Meu Dashboard";
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
+        /* (TODO O SEU CSS ORIGINAL PERMANECE EXATAMENTE IGUAL) */
         :root {
             --primary-blue: #1e3c72;
             --secondary-blue: #2a5298;
@@ -135,7 +139,6 @@ $page_title = "Meu Dashboard";
             overflow-x: hidden;
         }
 
-        /* Sidebar */
         .sidebar {
             position: fixed;
             top: 0;
@@ -217,7 +220,6 @@ $page_title = "Meu Dashboard";
             flex: 1;
         }
 
-        /* Main Content */
         .main-content {
             margin-left: var(--sidebar-width);
             padding: 20px;
@@ -229,7 +231,6 @@ $page_title = "Meu Dashboard";
             margin-left: 0;
         }
 
-        /* Top Navigation */
         .top-nav {
             background: white;
             padding: 15px 25px;
@@ -266,7 +267,6 @@ $page_title = "Meu Dashboard";
             font-weight: bold;
         }
 
-        /* Cards */
         .stats-card {
             background: white;
             border-radius: 15px;
@@ -309,7 +309,6 @@ $page_title = "Meu Dashboard";
             letter-spacing: .5px;
         }
 
-        /* Info Card */
         .info-card {
             background: white;
             border-radius: 15px;
@@ -326,7 +325,6 @@ $page_title = "Meu Dashboard";
             padding-bottom: 10px;
         }
 
-        /* Tabelas */
         .table-container {
             background: white;
             border-radius: 15px;
@@ -486,11 +484,6 @@ $page_title = "Meu Dashboard";
         <div class="info-box">
             <i class="fas fa-info-circle me-2 text-primary"></i>
             <strong>Regra de Negócio (RN07):</strong> Você está visualizando apenas notas de períodos já fechados pela secretaria.
-            <?php if ($is_terminal): ?>
-                <span class="badge-terminal ms-2">
-                    <i class="fas fa-graduation-cap me-1"></i>13ª Classe - Avaliação Terminal
-                </span>
-            <?php endif; ?>
         </div>
 
         <!-- Stats Cards -->
@@ -547,12 +540,6 @@ $page_title = "Meu Dashboard";
                         <?php if ($turma_atual['curso']): ?>
                             <p><strong>Curso:</strong> <?php echo htmlspecialchars($turma_atual['curso']); ?></p>
                         <?php endif; ?>
-                        <?php if ($is_terminal): ?>
-                            <div class="alert alert-warning mt-3 py-2">
-                                <i class="fas fa-graduation-cap me-2"></i>
-                                <strong>Turma Terminal:</strong> Sua avaliação é composta por Exame Prático, Estágio e Defesa.
-                            </div>
-                        <?php endif; ?>
                     <?php else: ?>
                         <p class="text-muted">Não enturmado para o ano letivo corrente.</p>
                     <?php endif; ?>
@@ -598,7 +585,7 @@ $page_title = "Meu Dashboard";
             </div>
         </div>
 
-        <!-- Últimas Notas -->
+        <!-- Últimas Notas (simplificado) -->
         <div class="row mt-4">
             <div class="col-12">
                 <div class="table-container">
@@ -613,33 +600,25 @@ $page_title = "Meu Dashboard";
                                 <tr>
                                     <th>Disciplina</th>
                                     <th>Trimestre</th>
-                                    <th>Tipo</th>
                                     <th>Nota</th>
                                     <th>Estado</th>
                                 </thead>
                                 <tbody>
                                     <?php if ($ultimas_notas && $ultimas_notas->num_rows > 0): ?>
-                                        <?php while ($nota = $ultimas_notas->fetch_assoc()):
+                                        <?php while ($nota = $ultimas_notas->fetch_assoc()): 
+                                            $media = $nota['nota_trimestre'] ?? 0;
+                                            $classe_nota = 'nota-media';
+                                            if ($media >= 14) $classe_nota = 'nota-alta';
+                                            elseif ($media < 10 && $media > 0) $classe_nota = 'nota-baixa';
                                         ?>
                                             <tr>
                                                 <td><?php echo htmlspecialchars($nota['disciplina']); ?></td>
-                                                <td><?php echo $nota['trimestre'] == 0 ? 'Final' : $nota['trimestre'] . 'º Trimestre'; ?></td>
+                                                <td><?php echo $nota['trimestre']; ?>º Trimestre</td>
                                                 <td>
-                                                    <span class="badge bg-info">
-                                                        <?php echo $nota['ano_letivo']; ?>
-                                                    </span>
-                                                </td>
-                                                <td>
-                                                    <span class="nota-badge 
-                                                    <?php
-                                                    $media = $nota['media_final'] ?? 0;
-                                                    if ($media >= 14) echo 'nota-alta';
-                                                    elseif ($media >= 10) echo 'nota-media';
-                                                    else echo 'nota-baixa';
-                                                    ?>">
+                                                    <span class="nota-badge <?php echo $classe_nota; ?>">
                                                         <?php echo $media ? number_format($media, 1) : '-'; ?>
                                                     </span>
-                                                 </td>
+                                                </td>
                                                 <td>
                                                     <?php if ($nota['estado'] == 'Aprovado'): ?>
                                                         <span class="badge bg-success"><i class="fas fa-check-circle me-1"></i>Aprovado</span>
@@ -648,12 +627,12 @@ $page_title = "Meu Dashboard";
                                                     <?php else: ?>
                                                         <span class="badge bg-secondary"><i class="fas fa-hourglass-half me-1"></i>Pendente</span>
                                                     <?php endif; ?>
-                                                 </td>
-                                             </tr>
+                                                </td>
+                                            </tr>
                                         <?php endwhile; ?>
                                     <?php else: ?>
                                         <tr>
-                                            <td colspan="5" class="text-center py-4">
+                                            <td colspan="4" class="text-center py-4">
                                                 <i class="fas fa-info-circle me-2"></i>
                                                 Nenhuma nota disponível. As notas aparecerão após o fechamento dos períodos.
                                             </td>

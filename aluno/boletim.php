@@ -4,6 +4,14 @@ session_start();
 require_once '../config/database.php';
 require_once '../includes/auth.php';
 
+// Carregar Composer autoloader para DomPDF
+if (file_exists('../vendor/autoload.php')) {
+    require_once '../vendor/autoload.php';
+}
+
+use Dompdf\Dompdf;
+use Dompdf\Options;
+
 // Verificar se é aluno
 if (!isLoggedIn() || !isAluno()) {
     header('Location: ../login.php');
@@ -34,7 +42,7 @@ $query = "SELECT t.id, t.nome as turma_nome, t.ano_letivo, t.curso
           LIMIT 1";
 $turma_atual = $db->query($query)->fetch_assoc();
 
-// Buscar notas do aluno por trimestre (campos reais do banco)
+// Buscar notas do aluno por trimestre (estrutura simplificada: apenas nota_trimestre)
 $query = "SELECT n.*, d.nome as disciplina_nome, d.codigo as disciplina_codigo
           FROM notas n
           INNER JOIN disciplinas d ON n.disciplina_id = d.id
@@ -58,8 +66,8 @@ while ($nota = $notas->fetch_assoc()) {
     if (!isset($medias_trimestre[$tri])) {
         $medias_trimestre[$tri] = ['soma' => 0, 'count' => 0];
     }
-    if ($nota['media_final'] > 0) {
-        $medias_trimestre[$tri]['soma'] += $nota['media_final'];
+    if ($nota['nota_trimestre'] > 0) {
+        $medias_trimestre[$tri]['soma'] += $nota['nota_trimestre'];
         $medias_trimestre[$tri]['count']++;
     }
 }
@@ -78,9 +86,324 @@ $media_final = $total_disciplinas > 0 ? round($media_final / $total_disciplinas,
 $situacao = $media_final >= 10 ? 'Aprovado' : ($media_final > 0 ? 'Reprovado' : 'Em Andamento');
 $situacao_classe = $situacao == 'Aprovado' ? 'aprovado' : ($situacao == 'Reprovado' ? 'reprovado' : 'andamento');
 
-// Processar exportação CSV
+// Processar exportação
 $export_action = isset($_GET['export']) ? $_GET['export'] : '';
 
+// =============================================
+// EXPORTAÇÃO PDF (usando DomPDF)
+// =============================================
+if ($export_action == 'pdf') {
+    // Verificar se a classe Dompdf existe
+    if (!class_exists('Dompdf\Dompdf')) {
+        die('Erro: A biblioteca DomPDF não está instalada. Execute "composer require dompdf/dompdf" no terminal.');
+    }
+    
+    try {
+        // Configurar opções do DomPDF
+        $options = new Options();
+        $options->set('defaultFont', 'DejaVu Sans');
+        $options->set('defaultMediaType', 'print');
+        $options->set('isHtml5ParserEnabled', true);
+        $options->set('isPhpEnabled', false); // Desabilitar PHP no HTML por segurança
+        $options->set('isRemoteEnabled', true); // Permite carregar imagens remotas
+        $options->set('isJavascriptEnabled', false); // Desabilitar JavaScript por segurança
+        $options->set('isFontSubsettingEnabled', true); // Otimizar tamanho das fontes
+        $options->set('logOutputFile', null); // Não gerar logs
+        $options->set('debugKeepTemp', false); // Não manter arquivos temporários
+        $options->set('debugCss', false); // Não debugar CSS
+        
+        $dompdf = new Dompdf($options);
+        
+    } catch (Exception $e) {
+        die('Erro ao configurar DomPDF: ' . htmlspecialchars($e->getMessage()));
+    }
+    
+    // Preparar o HTML do PDF
+    $html_pdf = '
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Boletim Escolar - ' . htmlspecialchars($aluno_info['nome']) . '</title>
+        <style>
+            @page {
+                margin: 2cm;
+                size: A4;
+            }
+            body {
+                font-family: "DejaVu Sans", Arial, sans-serif;
+                font-size: 11pt;
+                line-height: 1.4;
+                color: #333;
+                margin: 0;
+                padding: 0;
+            }
+            .boletim-container {
+                max-width: 100%;
+            }
+            /* Cabeçalho */
+            .header {
+                text-align: center;
+                margin-bottom: 25px;
+                border-bottom: 2px solid #1e3c72;
+                padding-bottom: 15px;
+            }
+            .logo {
+                width: 80px;
+                height: 80px;
+                margin-bottom: 10px;
+            }
+            .instituicao {
+                font-size: 18pt;
+                font-weight: bold;
+                color: #1e3c72;
+                margin: 5px 0;
+            }
+            .subtitle {
+                font-size: 12pt;
+                color: #555;
+            }
+            .ano-letivo {
+                font-size: 11pt;
+                margin-top: 5px;
+                font-weight: bold;
+            }
+            /* Informações do aluno */
+            .info-aluno {
+                background: #f5f5f5;
+                padding: 12px;
+                margin-bottom: 20px;
+                border-left: 4px solid #1e3c72;
+                font-size: 10pt;
+            }
+            .info-aluno p {
+                margin: 5px 0;
+            }
+            .info-aluno strong {
+                color: #1e3c72;
+            }
+            /* Tabela de notas */
+            .tabela-notas {
+                width: 100%;
+                border-collapse: collapse;
+                margin-bottom: 20px;
+            }
+            .tabela-notas th {
+                background: #1e3c72;
+                color: white;
+                padding: 8px;
+                text-align: center;
+                font-size: 10pt;
+            }
+            .tabela-notas td {
+                border: 1px solid #ddd;
+                padding: 6px;
+                text-align: center;
+                font-size: 10pt;
+            }
+            .tabela-notas td:first-child {
+                text-align: left;
+                font-weight: 500;
+            }
+            .tabela-notas tr:nth-child(even) {
+                background: #f9f9f9;
+            }
+            /* Destaque de notas */
+            .nota-alta {
+                font-weight: bold;
+                color: #155724;
+                background: #d4edda;
+                border-radius: 4px;
+                padding: 2px 6px;
+                display: inline-block;
+            }
+            .nota-media {
+                font-weight: bold;
+                color: #856404;
+                background: #fff3cd;
+                border-radius: 4px;
+                padding: 2px 6px;
+                display: inline-block;
+            }
+            .nota-baixa {
+                font-weight: bold;
+                color: #721c24;
+                background: #f8d7da;
+                border-radius: 4px;
+                padding: 2px 6px;
+                display: inline-block;
+            }
+            /* Resumo final */
+            .resumo {
+                margin-top: 20px;
+                padding: 12px;
+                background: #f0f4f8;
+                border-radius: 8px;
+                text-align: center;
+            }
+            .media-final {
+                font-size: 16pt;
+                font-weight: bold;
+                color: #1e3c72;
+            }
+            .situacao {
+                font-size: 14pt;
+                font-weight: bold;
+                margin-top: 8px;
+                padding: 8px;
+                border-radius: 30px;
+                display: inline-block;
+                min-width: 150px;
+            }
+            .situacao-aprovado { background: #d4edda; color: #155724; }
+            .situacao-reprovado { background: #f8d7da; color: #721c24; }
+            .situacao-andamento { background: #fff3cd; color: #856404; }
+            /* Rodapé */
+            .footer {
+                margin-top: 30px;
+                font-size: 8pt;
+                text-align: center;
+                color: #777;
+                border-top: 1px solid #ddd;
+                padding-top: 10px;
+            }
+            .legenda {
+                font-size: 8pt;
+                margin-top: 15px;
+                padding: 8px;
+                background: #f9f9f9;
+                border-left: 3px solid #1e3c72;
+            }
+            .trimestre-title {
+                font-size: 14pt;
+                font-weight: bold;
+                color: #1e3c72;
+                margin: 15px 0 10px 0;
+                border-left: 4px solid #1e3c72;
+                padding-left: 12px;
+            }
+            .media-trimestre {
+                text-align: right;
+                font-weight: bold;
+                margin-top: 5px;
+                margin-bottom: 15px;
+                font-size: 10pt;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="boletim-container">
+            <!-- Cabeçalho -->
+            <div class="header">
+                <img src="' . (file_exists('../assets/img/logo.png') ? '../assets/img/logo.png' : 'https://via.placeholder.com/80?text=IPOK') . '" class="logo" alt="Logo IPOK">
+                <div class="instituicao">Instituto Politécnico do Kituma - IPOK</div>
+                <div class="subtitle">Boletim Escolar</div>
+                <div class="ano-letivo">Ano Letivo ' . date('Y') . '</div>
+            </div>
+            
+            <!-- Informações do Aluno -->
+            <div class="info-aluno">
+                <p><strong>Aluno:</strong> ' . htmlspecialchars($aluno_info['nome']) . '</p>
+                <p><strong>Matrícula:</strong> ' . htmlspecialchars($aluno_info['numero_matricula']) . '</p>
+                <p><strong>Turma:</strong> ' . htmlspecialchars($turma_atual['turma_nome']) . ' | <strong>Curso:</strong> ' . htmlspecialchars($turma_atual['curso'] ?? 'Não definido') . '</p>
+                <p><strong>Data de Emissão:</strong> ' . date('d/m/Y H:i') . '</p>
+            </div>
+            
+            <!-- Legenda -->
+            <div class="legenda">
+                <strong>Legenda:</strong> Aprovado: ≥ 10 valores | Reprovado: < 10 valores
+            </div>
+            
+            <!-- Notas por Trimestre -->
+            ';
+    
+    for ($tri = 1; $tri <= 3; $tri++) {
+        if (empty($notas_por_trimestre[$tri])) continue;
+        
+        $html_pdf .= '
+            <div class="trimestre-title">' . $tri . 'º Trimestre</div>
+            <table class="tabela-notas">
+                <thead>
+                    <tr>
+                        <th>Disciplina</th>
+                        <th>Código</th>
+                        <th>Nota do Trimestre</th>
+                        <th>Estado</th>
+                    </tr>
+                </thead>
+                <tbody>
+        ';
+        
+        foreach ($notas_por_trimestre[$tri] as $nota) {
+            $nota_valor = $nota['nota_trimestre'] ?? 0;
+            $estado = $nota['estado'] ?? 'Pendente';
+            
+            $classe_nota = 'nota-media';
+            if ($nota_valor >= 14) $classe_nota = 'nota-alta';
+            elseif ($nota_valor < 10 && $nota_valor > 0) $classe_nota = 'nota-baixa';
+            
+            $estado_badge = '';
+            if ($estado == 'Aprovado') $estado_badge = '<span style="background:#28a745; color:white; padding:2px 8px; border-radius:12px;">Aprovado</span>';
+            elseif ($estado == 'Reprovado') $estado_badge = '<span style="background:#dc3545; color:white; padding:2px 8px; border-radius:12px;">Reprovado</span>';
+            else $estado_badge = '<span style="background:#6c757d; color:white; padding:2px 8px; border-radius:12px;">Pendente</span>';
+            
+            $html_pdf .= '
+                <tr>
+                    <td>' . htmlspecialchars($nota['disciplina_nome']) . '</td>
+                    <td>' . htmlspecialchars($nota['disciplina_codigo'] ?? '---') . '</td>
+                    <td><span class="' . $classe_nota . '">' . ($nota_valor ? number_format($nota_valor, 1) : '-') . '</span></td>
+                    <td>' . $estado_badge . '</td>
+                </tr>
+            ';
+        }
+        
+        $html_pdf .= '
+                </tbody>
+            </table>
+        ';
+        
+        if (isset($medias_trimestre[$tri]['media']) && $medias_trimestre[$tri]['media'] > 0) {
+            $html_pdf .= '<div class="media-trimestre">Média do Trimestre: <strong>' . number_format($medias_trimestre[$tri]['media'], 1) . '</strong></div>';
+        }
+    }
+    
+    // Resumo final
+    $situacao_texto = $situacao;
+    $situacao_css = '';
+    if ($situacao == 'Aprovado') $situacao_css = 'situacao-aprovado';
+    elseif ($situacao == 'Reprovado') $situacao_css = 'situacao-reprovado';
+    else $situacao_css = 'situacao-andamento';
+    
+    $html_pdf .= '
+            <div class="resumo">
+                <div class="media-final">Média Final: ' . number_format($media_final, 1) . '</div>
+                <div class="situacao ' . $situacao_css . '">Situação: ' . $situacao_texto . '</div>
+            </div>
+            
+            <div class="footer">
+                Documento emitido eletronicamente pelo Sistema IPOK.<br>
+                www.ipok.ao | ' . date('d/m/Y H:i') . '
+            </div>
+        </div>
+    </body>
+    </html>
+    ';
+    
+    // Gerar PDF
+    try {
+        $dompdf->loadHtml($html_pdf);
+        $dompdf->setPaper('A4', 'portrait');
+        $dompdf->render();
+        $dompdf->stream("boletim_" . $aluno_info['numero_matricula'] . ".pdf", array("Attachment" => true));
+    } catch (Exception $e) {
+        die('Erro ao gerar PDF: ' . htmlspecialchars($e->getMessage()));
+    }
+    exit;
+}
+
+// =============================================
+// EXPORTAÇÃO CSV
+// =============================================
 if ($export_action == 'csv') {
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename="boletim_' . $aluno_info['numero_matricula'] . '.csv"');
@@ -99,23 +422,20 @@ if ($export_action == 'csv') {
         if (empty($notas_por_trimestre[$tri])) continue;
         
         fputcsv($output, [$tri . 'º Trimestre']);
-        fputcsv($output, ['Disciplina', 'Avaliação 1', 'Avaliação 2', 'MAC', 'Exame', 'Média Final', 'Estado']);
+        fputcsv($output, ['Disciplina', 'Código', 'Nota do Trimestre', 'Estado']);
         
         foreach ($notas_por_trimestre[$tri] as $nota) {
-            $media = $nota['media_final'] ?? 0;
+            $nota_valor = $nota['nota_trimestre'] ?? 0;
             fputcsv($output, [
                 $nota['disciplina_nome'],
-                $nota['avaliacao1'] ? number_format($nota['avaliacao1'], 1) : '-',
-                $nota['avaliacao2'] ? number_format($nota['avaliacao2'], 1) : '-',
-                $nota['mac'] ? number_format($nota['mac'], 1) : '-',
-                $nota['exame'] ? number_format($nota['exame'], 1) : '-',
-                $media ? number_format($media, 1) : '-',
+                $nota['disciplina_codigo'] ?? '---',
+                $nota_valor ? number_format($nota_valor, 1) : '-',
                 $nota['estado'] ?? 'Pendente'
             ]);
         }
         
         if (isset($medias_trimestre[$tri]['media']) && $medias_trimestre[$tri]['media'] > 0) {
-            fputcsv($output, ['Média do Trimestre:', '', '', '', '', number_format($medias_trimestre[$tri]['media'], 1)]);
+            fputcsv($output, ['Média do Trimestre:', '', number_format($medias_trimestre[$tri]['media'], 1)]);
         }
         fputcsv($output, []);
     }
@@ -140,6 +460,7 @@ $page_title = "Meu Boletim";
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <style>
+        /* ... (mantenha exatamente o mesmo CSS do seu arquivo original) ... */
         :root {
             --primary-blue: #1e3c72;
             --secondary-blue: #2a5298;
@@ -152,7 +473,6 @@ $page_title = "Meu Boletim";
             overflow-x: hidden;
         }
         
-        /* Sidebar */
         .sidebar {
             position: fixed;
             top: 0;
@@ -214,7 +534,6 @@ $page_title = "Meu Boletim";
         
         .sidebar-menu .menu-item i { width: 30px; font-size: 1.2rem; }
         
-        /* Main Content */
         .main-content {
             margin-left: var(--sidebar-width);
             padding: 20px;
@@ -224,7 +543,6 @@ $page_title = "Meu Boletim";
         
         .main-content.sidebar-hidden { margin-left: 0; }
         
-        /* Top Navigation */
         .top-nav {
             background: white;
             padding: 15px 25px;
@@ -249,7 +567,6 @@ $page_title = "Meu Boletim";
             font-weight: bold;
         }
         
-        /* Boletim Card */
         .boletim-card {
             background: white;
             border-radius: 24px;
@@ -369,7 +686,6 @@ $page_title = "Meu Boletim";
             color: var(--primary-blue);
         }
         
-        /* Trimestre Cards */
         .trimestre-container {
             padding: 25px 30px;
         }
@@ -580,7 +896,6 @@ $page_title = "Meu Boletim";
             color: white;
         }
         
-        /* Estilos para impressão/PDF */
         @media print {
             .sidebar, .top-nav, .action-bar, .btn-export, .btn-print, .no-print {
                 display: none !important;
@@ -766,50 +1081,26 @@ $page_title = "Meu Boletim";
                             <thead>
                                 <tr>
                                     <th>Disciplina</th>
-                                    <th>Avaliação 1</th>
-                                    <th>Avaliação 2</th>
-                                    <th>MAC</th>
-                                    <th>Exame</th>
-                                    <th>Média Final</th>
+                                    <th>Código</th>
+                                    <th>Nota do Trimestre</th>
                                     <th>Estado</th>
-                                 </thead>
-                                <tbody>
+                                </tr>
+                            </thead>
+                            <tbody>
                                     <?php foreach ($notas_por_trimestre[$tri] as $nota): 
-                                        $media = $nota['media_final'] ?? 0;
+                                        $nota_valor = $nota['nota_trimestre'] ?? 0;
                                         $classe_nota = 'nota-media';
-                                        if ($media >= 14) $classe_nota = 'nota-alta';
-                                        elseif ($media < 10 && $media > 0) $classe_nota = 'nota-baixa';
+                                        if ($nota_valor >= 14) $classe_nota = 'nota-alta';
+                                        elseif ($nota_valor < 10 && $nota_valor > 0) $classe_nota = 'nota-baixa';
                                     ?>
                                     <tr>
                                         <td class="fw-500">
                                             <?php echo htmlspecialchars($nota['disciplina_nome']); ?>
-                                            <?php if ($nota['disciplina_codigo']): ?>
-                                                <br><small class="text-muted">(<?php echo $nota['disciplina_codigo']; ?>)</small>
-                                            <?php endif; ?>
                                         </td>
-                                        <td>
-                                            <span class="nota-badge <?php echo ($nota['avaliacao1'] ?? 0) >= 10 ? 'nota-alta' : (($nota['avaliacao1'] ?? 0) > 0 ? 'nota-baixa' : ''); ?>">
-                                                <?php echo ($nota['avaliacao1'] ?? 0) ? number_format($nota['avaliacao1'], 1) : '-'; ?>
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <span class="nota-badge <?php echo ($nota['avaliacao2'] ?? 0) >= 10 ? 'nota-alta' : (($nota['avaliacao2'] ?? 0) > 0 ? 'nota-baixa' : ''); ?>">
-                                                <?php echo ($nota['avaliacao2'] ?? 0) ? number_format($nota['avaliacao2'], 1) : '-'; ?>
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <span class="nota-badge <?php echo ($nota['mac'] ?? 0) >= 10 ? 'nota-alta' : (($nota['mac'] ?? 0) > 0 ? 'nota-baixa' : ''); ?>">
-                                                <?php echo ($nota['mac'] ?? 0) ? number_format($nota['mac'], 1) : '-'; ?>
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <span class="nota-badge <?php echo ($nota['exame'] ?? 0) >= 10 ? 'nota-alta' : (($nota['exame'] ?? 0) > 0 ? 'nota-baixa' : ''); ?>">
-                                                <?php echo ($nota['exame'] ?? 0) ? number_format($nota['exame'], 1) : '-'; ?>
-                                            </span>
-                                        </td>
+                                        <td><?php echo htmlspecialchars($nota['disciplina_codigo'] ?? '---'); ?></td>
                                         <td>
                                             <span class="nota-badge <?php echo $classe_nota; ?>">
-                                                <?php echo $media ? number_format($media, 1) : '-'; ?>
+                                                <?php echo $nota_valor ? number_format($nota_valor, 1) : '-'; ?>
                                             </span>
                                         </td>
                                         <td>
@@ -825,8 +1116,8 @@ $page_title = "Meu Boletim";
                                     <?php endforeach; ?>
                                 </tbody>
                             </table>
-                        </div>
                     </div>
+                </div>
                 <?php endfor; ?>
             </div>
             
@@ -848,9 +1139,9 @@ $page_title = "Meu Boletim";
             
             <!-- Ações de Exportação -->
             <div class="action-bar no-print">
-                <button onclick="window.print()" class="btn-export btn-pdf">
+                <a href="?export=pdf" class="btn-export btn-pdf">
                     <i class="fas fa-file-pdf"></i> Exportar PDF
-                </button>
+                </a>
                 <a href="?export=csv" class="btn-export btn-csv">
                     <i class="fas fa-file-excel"></i> Exportar CSV
                 </a>
