@@ -723,7 +723,6 @@ $page_title = "Logs de Auditoria";
         <!-- Info Box - RN09 -->
         <div class="info-box">
             <ul class="mb-0 mt-2">
-                <li>Registro de IP e usuário em todas ações</li>
                 <li>Dados antigos e novos são preservados em JSON</li>
                 <li>Logs são permanentes (apenas admin master pode limpar)</li>
             </ul>
