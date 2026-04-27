@@ -310,5 +310,5 @@ Este projeto está licenciado sob a **MIT License** – consulte o ficheiro `LIC
 Desenvolvido por: **MAGOS DO CÓDIGO**
 
 🏫 Instituto Politécnico do Kituma (IPOK) – Angola  
-🛠️ Suporte técnico: Magos do código 
+🛠️ Suporte técnico: Quorum 
 📅 Última atualização: Abril de 2026

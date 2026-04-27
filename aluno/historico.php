@@ -115,14 +115,22 @@ $page_title = "Histórico Escolar";
         }
         
         .sidebar-header .logo {
-            width: 60px; height: 60px;
+            width: 100px;
+            height: 100px;
             background: white;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
             margin: 0 auto 15px;
-            color: var(--primary-blue);
+            padding: 8px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+            transition: transform 0.3s ease;
+        }
+
+        .sidebar-header .logo:hover {
+            transform: scale(1.05);
+        }
             font-size: 2rem;
         }
         

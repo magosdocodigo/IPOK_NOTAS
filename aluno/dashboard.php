@@ -13,11 +13,20 @@ if (!isLoggedIn() || !isAluno()) {
 $database = new Database();
 $db = $database->getConnection();
 
-// Buscar ID do aluno logado
-$query = "SELECT id FROM alunos WHERE usuario_id = {$_SESSION['user_id']}";
-$result = $db->query($query);
+// Buscar ID do aluno logado com verificação
+$query = "SELECT id FROM alunos WHERE usuario_id = ?";
+$stmt = $db->prepare($query);
+$stmt->bind_param('i', $_SESSION['user_id']);
+$stmt->execute();
+$result = $stmt->get_result();
+
+if (!$result || $result->num_rows === 0) {
+    die("Erro: Aluno não encontrado. Por favor, contacte o administrador.");
+}
+
 $aluno = $result->fetch_assoc();
 $aluno_id = $aluno['id'];
+$stmt->close();
 
 // =============================================
 // ESTATÍSTICAS DO ALUNO (adaptado para nota_trimestre)
@@ -26,32 +35,48 @@ $aluno_id = $aluno['id'];
 // Média geral (apenas notas lançadas)
 $query = "SELECT AVG(n.nota_trimestre) as media_geral 
           FROM notas n
-          WHERE n.aluno_id = $aluno_id AND n.nota_trimestre IS NOT NULL";
-$result = $db->query($query);
+          WHERE n.aluno_id = ? AND n.nota_trimestre IS NOT NULL";
+$stmt = $db->prepare($query);
+$stmt->bind_param('i', $aluno_id);
+$stmt->execute();
+$result = $stmt->get_result();
 $stats['media_geral'] = round($result->fetch_assoc()['media_geral'] ?? 0, 1);
+$stmt->close();
 
 // Total de disciplinas com notas
 $query = "SELECT COUNT(DISTINCT n.disciplina_id) as total_disciplinas 
           FROM notas n
-          WHERE n.aluno_id = $aluno_id";
-$result = $db->query($query);
+          WHERE n.aluno_id = ?";
+$stmt = $db->prepare($query);
+$stmt->bind_param('i', $aluno_id);
+$stmt->execute();
+$result = $stmt->get_result();
 $stats['disciplinas'] = $result->fetch_assoc()['total_disciplinas'];
+$stmt->close();
 
 // Total de trimestres com notas
 $query = "SELECT COUNT(DISTINCT CONCAT(n.ano_letivo, n.trimestre)) as total_periodos 
           FROM notas n
-          WHERE n.aluno_id = $aluno_id";
-$result = $db->query($query);
+          WHERE n.aluno_id = ?";
+$stmt = $db->prepare($query);
+$stmt->bind_param('i', $aluno_id);
+$stmt->execute();
+$result = $stmt->get_result();
 $stats['periodos'] = $result->fetch_assoc()['total_periodos'];
+$stmt->close();
 
 // Aproveitamento (aprovados vs total)
 $query = "SELECT 
           COUNT(CASE WHEN n.estado = 'Aprovado' THEN 1 END) as aprovados,
           COUNT(*) as total
           FROM notas n
-          WHERE n.aluno_id = $aluno_id AND n.estado IS NOT NULL";
-$result = $db->query($query);
+          WHERE n.aluno_id = ? AND n.estado IS NOT NULL";
+$stmt = $db->prepare($query);
+$stmt->bind_param('i', $aluno_id);
+$stmt->execute();
+$result = $stmt->get_result();
 $row = $result->fetch_assoc();
+$stmt->close();
 $stats['aprovados'] = $row['aprovados'] ?? 0;
 $stats['total_notas'] = $row['total'] ?? 0;
 $stats['aproveitamento'] = $stats['total_notas'] > 0 ? round(($stats['aprovados'] / $stats['total_notas']) * 100, 1) : 0;
@@ -63,10 +88,14 @@ $query = "SELECT n.nota_trimestre, n.trimestre, n.ano_letivo, n.estado,
           d.nome as disciplina, d.codigo as disciplina_codigo
           FROM notas n
           INNER JOIN disciplinas d ON n.disciplina_id = d.id
-          WHERE n.aluno_id = $aluno_id
+          WHERE n.aluno_id = ?
           ORDER BY n.ano_letivo DESC, n.trimestre DESC, n.id DESC
           LIMIT 10";
-$ultimas_notas = $db->query($query);
+$stmt = $db->prepare($query);
+$stmt->bind_param('i', $aluno_id);
+$stmt->execute();
+$ultimas_notas = $stmt->get_result();
+$stmt->close();
 
 // =============================================
 // INFORMAÇÕES DA TURMA ATUAL (simplificado)
@@ -74,9 +103,13 @@ $ultimas_notas = $db->query($query);
 $query = "SELECT t.id, t.nome as turma_nome, t.ano_letivo, t.curso
           FROM enturmacoes e
           INNER JOIN turmas t ON e.turma_id = t.id
-          WHERE e.aluno_id = $aluno_id AND t.ano_letivo = YEAR(CURDATE())
+          WHERE e.aluno_id = ? AND t.ano_letivo = YEAR(CURDATE())
           LIMIT 1";
-$turma_atual = $db->query($query)->fetch_assoc();
+$stmt = $db->prepare($query);
+$stmt->bind_param('i', $aluno_id);
+$stmt->execute();
+$turma_atual = $stmt->get_result()->fetch_assoc();
+$stmt->close();
 
 // =============================================
 // NOTAS POR TRIMESTRE (EVOLUÇÃO)
@@ -85,9 +118,13 @@ $evolucao = [];
 for ($tri = 1; $tri <= 3; $tri++) {
     $query = "SELECT AVG(n.nota_trimestre) as media 
               FROM notas n
-              WHERE n.aluno_id = $aluno_id AND n.trimestre = $tri AND n.nota_trimestre IS NOT NULL";
-    $result = $db->query($query);
+              WHERE n.aluno_id = ? AND n.trimestre = ? AND n.nota_trimestre IS NOT NULL";
+    $stmt = $db->prepare($query);
+    $stmt->bind_param('ii', $aluno_id, $tri);
+    $stmt->execute();
+    $result = $stmt->get_result();
     $evolucao[$tri] = round($result->fetch_assoc()['media'] ?? 0, 1);
+    $stmt->close();
 }
 
 // =============================================
@@ -96,16 +133,24 @@ for ($tri = 1; $tri <= 3; $tri++) {
 $query = "SELECT d.nome as disciplina, n.nota_trimestre as media_final 
           FROM notas n
           INNER JOIN disciplinas d ON n.disciplina_id = d.id
-          WHERE n.aluno_id = $aluno_id AND n.nota_trimestre IS NOT NULL
+          WHERE n.aluno_id = ? AND n.nota_trimestre IS NOT NULL
           ORDER BY n.nota_trimestre DESC LIMIT 1";
-$melhor = $db->query($query)->fetch_assoc();
+$stmt = $db->prepare($query);
+$stmt->bind_param('i', $aluno_id);
+$stmt->execute();
+$melhor = $stmt->get_result()->fetch_assoc();
+$stmt->close();
 
 $query = "SELECT d.nome as disciplina, n.nota_trimestre as media_final 
           FROM notas n
           INNER JOIN disciplinas d ON n.disciplina_id = d.id
-          WHERE n.aluno_id = $aluno_id AND n.nota_trimestre IS NOT NULL
+          WHERE n.aluno_id = ? AND n.nota_trimestre IS NOT NULL
           ORDER BY n.nota_trimestre ASC LIMIT 1";
-$pior = $db->query($query)->fetch_assoc();
+$stmt = $db->prepare($query);
+$stmt->bind_param('i', $aluno_id);
+$stmt->execute();
+$pior = $stmt->get_result()->fetch_assoc();
+$stmt->close();
 
 $page_title = "Meu Dashboard";
 ?>
@@ -164,16 +209,21 @@ $page_title = "Meu Dashboard";
         }
 
         .sidebar-header .logo {
-            width: 80px;
-            height: 80px;
-            background: transparent;
-            border-radius: 0;
+            width: 100px;
+            height: 100px;
+            background: white;
+            border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
             margin: 0 auto 15px;
-            color: var(--primary-blue);
-            font-size: 2rem;
+            padding: 8px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+            transition: transform 0.3s ease;
+        }
+
+        .sidebar-header .logo:hover {
+            transform: scale(1.05);
         }
 
         .sidebar-header .logo img {

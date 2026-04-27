@@ -36,56 +36,80 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $database = new Database();
         $db = $database->getConnection();
         
-        $identificador = mysqli_real_escape_string($db, $_POST['identificador']);
+        $identificador = trim($_POST['identificador']);
         $senha = $_POST['senha'];
         $ip = $_SERVER['REMOTE_ADDR'];
         
-        // Verificar tentativas de login (anti brute force)
-        $check_attempts = $db->query("SELECT COUNT(*) as attempts FROM login_attempts WHERE ip = '$ip' AND tentativa_em > DATE_SUB(NOW(), INTERVAL 5 MINUTE)");
-        $attempts = $check_attempts->fetch_assoc();
-        
-        if ($attempts['attempts'] >= 5) {
-            $error = "Muitas tentativas de login. Aguarde 5 minutos.";
+        if (empty($identificador) || empty($senha)) {
+            $error = "Email/Matrícula e senha são obrigatórios.";
         } else {
-            // Registrar tentativa
-            $db->query("INSERT INTO login_attempts (ip, identificador) VALUES ('$ip', '$identificador')");
+            // Verificar tentativas de login (anti brute force) com prepared statement
+            $stmt_attempts = $db->prepare("SELECT COUNT(*) as attempts FROM login_attempts WHERE ip = ? AND tentativa_em > DATE_SUB(NOW(), INTERVAL 5 MINUTE)");
+            $stmt_attempts->bind_param('s', $ip);
+            $stmt_attempts->execute();
+            $result_attempts = $stmt_attempts->get_result();
+            $attempts = $result_attempts->fetch_assoc();
+            $stmt_attempts->close();
             
-            // Buscar usuário
-            $query = "SELECT u.*, a.numero_matricula FROM usuarios u 
-                      LEFT JOIN alunos a ON u.id = a.usuario_id 
-                      WHERE (u.email = '$identificador' OR a.numero_matricula = '$identificador') AND u.ativo = 1";
-            $result = $db->query($query);
-            
-            if ($result && $result->num_rows > 0) {
-                $user = $result->fetch_assoc();
+            if ($attempts['attempts'] >= 5) {
+                $error = "Muitas tentativas de login. Aguarde 5 minutos.";
+            } else {
+                // Registrar tentativa com prepared statement
+                $stmt_register = $db->prepare("INSERT INTO login_attempts (ip, identificador, tentativa_em) VALUES (?, ?, NOW())");
+                $stmt_register->bind_param('ss', $ip, $identificador);
+                $stmt_register->execute();
+                $stmt_register->close();
                 
-                // Verificar senha (usando password_hash)
-                if (password_verify($senha, $user['senha'])) {
-                    // Login bem-sucedido
-                    $_SESSION['user_id'] = $user['id'];
-                    $_SESSION['user_nome'] = $user['nome'];
-                    $_SESSION['user_email'] = $user['email'];
-                    $_SESSION['user_nivel'] = $user['nivel'];
+                // Buscar usuário com prepared statement
+                $stmt_user = $db->prepare("
+                    SELECT u.id, u.nome, u.email, u.nivel, u.senha, a.numero_matricula 
+                    FROM usuarios u 
+                    LEFT JOIN alunos a ON u.id = a.usuario_id 
+                    WHERE (u.email = ? OR a.numero_matricula = ?) AND u.ativo = 1
+                    LIMIT 1
+                ");
+                $stmt_user->bind_param('ss', $identificador, $identificador);
+                $stmt_user->execute();
+                $result = $stmt_user->get_result();
+                
+                if ($result && $result->num_rows > 0) {
+                    $user = $result->fetch_assoc();
                     
-                    if ($user['nivel'] === 'aluno') {
-                        $_SESSION['user_matricula'] = $user['numero_matricula'];
+                    // Verificar senha
+                    if (password_verify($senha, $user['senha'])) {
+                        // Login bem-sucedido
+                        $_SESSION['user_id'] = $user['id'];
+                        $_SESSION['user_nome'] = $user['nome'];
+                        $_SESSION['user_email'] = $user['email'];
+                        $_SESSION['user_nivel'] = $user['nivel'];
+                        
+                        if ($user['nivel'] === 'aluno') {
+                            $_SESSION['user_matricula'] = $user['numero_matricula'];
+                        }
+                        
+                        // Atualizar último acesso com prepared statement
+                        $stmt_update = $db->prepare("UPDATE usuarios SET ultimo_acesso = NOW() WHERE id = ?");
+                        $stmt_update->bind_param('i', $user['id']);
+                        $stmt_update->execute();
+                        $stmt_update->close();
+                        
+                        // Registrar login no log de auditoria com prepared statement
+                        $stmt_log = $db->prepare("INSERT INTO logs_auditoria (usuario_id, acao, tabela) VALUES (?, 'LOGIN', 'usuarios')");
+                        $stmt_log->bind_param('i', $user['id']);
+                        $stmt_log->execute();
+                        $stmt_log->close();
+                        
+                        // Redirecionar para splash.php
+                        header('Location: splash.php');
+                        exit();
+                    } else {
+                        $error = "Credenciais inválidas!";
                     }
-                    
-                    // Atualizar último acesso
-                    $db->query("UPDATE usuarios SET ultimo_acesso = NOW() WHERE id = " . $user['id']);
-                    
-                    // Registrar login no log de auditoria
-                    $db->query("INSERT INTO logs_auditoria (usuario_id, acao, tabela, ip) 
-                               VALUES ({$user['id']}, 'LOGIN', 'usuarios', '$ip')");
-                    
-                    // Redirecionar para splash.php
-                    header('Location: splash.php');
-                    exit();
                 } else {
                     $error = "Credenciais inválidas!";
                 }
-            } else {
-                $error = "Credenciais inválidas!";
+                
+                $stmt_user->close();
             }
         }
     }
@@ -100,7 +124,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link rel="shortcut icon" href="assets/img/logo.png" type="image/x-icon">
     
     <!-- Favicon -->
-    <link rel="icon" type="image/jpeg" href="assets/img/ipok_logo.jpeg">
+    <link rel="icon" type="image/jpeg" href="assets/img/logo.jpeg">
     
     <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -714,7 +738,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="form-container">
                 <!-- Logo para mobile -->
                 <div class="mobile-logo" id="mobileLogo">
-                    <img src="assets/img/ipok_logo.jpeg" alt="IPOK Logo" onerror="this.onerror=null; this.src='https://via.placeholder.com/80?text=IPOK';">
+                    <img src="assets/img/logo.jpeg" alt="IPOK Logo" onerror="this.onerror=null; this.src='https://via.placeholder.com/80?text=IPOK';">
                     <h2 style="color: #1e4d8c; margin-top: 15px;">SISG NOTA</h2>
                 </div>
 

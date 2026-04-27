@@ -214,9 +214,18 @@ $page_title = "Gestão de Períodos";
         }
         
         .sidebar-header .logo {
-            width: 80px;
-            height: 80px;
+            width: 100px;
+            height: 100px;
+            background: white;
+            border-radius: 50%;
+            padding: 8px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
             margin: 0 auto 15px;
+            transition: transform 0.3s ease;
+        }
+
+        .sidebar-header .logo:hover {
+            transform: scale(1.05);
         }
         
         .sidebar-header .logo img {
